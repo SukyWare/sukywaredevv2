@@ -1,0 +1,4329 @@
+--[[
+	SukyWare (VERSÃO DE TESTE, UM SCRIPT SÓ) + ANIMAÇÕES + DASH + AUTO-SAVE
+
+	Coloque como LocalScript em StarterPlayerScripts. Não precisa de servidor.
+	Speed e Soru são aplicados direto pelo cliente (só para testar no Studio).
+	Para o sorteio de verdade, use a versão com AdminServer (mais segura).
+	RightShift = mostrar/esconder (muda na aba Settings)
+
+	NOVIDADES DESTA VERSÃO (v6)
+	  - TELA DE CARREGAMENTO: removida a linha que aparecia FORA do card
+	    (era a borda da janela principal, escondida mas com o contorno ainda
+	    visível). Agora só existe a linha branca do próprio card.
+	  - MARCA D'ÁGUA: fica sempre no canto inferior direito da tela.
+	    Antes do script carregar ele detecta se é PC ou celular e ajusta
+	    tamanho/margem (celular = menor e mais colada no canto).
+	  - As notificações foram um pouco para cima para não ficarem em cima
+	    da marca d'água.
+
+	  TELA DE CARREGAMENTO (v5):
+	    - Card pequeno no centro da tela (não cobre mais tudo)
+	    - Bordas arredondadas com linha branca ao redor
+	    - SUKYWARE no canto superior esquerdo + badge V2 + "PREMIUM EDITION · ROBLOX"
+	    - Barra de progresso de 5 segundos com % no canto direito
+	    - Texto de status: "Iniciando..." -> "Carregando script luau" (aos 3s)
+	      -> "Pronto para uso." (no fim)
+	    - Linha de etapa embaixo (Verificando key, Montando interface...)
+	  SETTINGS > GERAL:
+	    - "HUD mobile": liga/desliga os tiles de atalho (somem de vez quando off)
+	    - "Mostrar FPS": janelinha com FPS, Ping, Frame, Memória e Jogadores
+	      · azul  = FPS >= 50 e ping <= 150 ms (estável)
+	      · vermelho = FPS abaixo de 50
+	      · neutro = FPS ok, mas ping alto
+	  TP PLAYER:
+	    - Teleporta para o JOGADOR MAIS PRÓXIMO de você (sem lista)
+	  HUD MOBILE (tiles escuros, estilo do print de referência):
+	    - Nome em destaque + legenda embaixo
+	    - Fly e Macro mostram ON/OFF e acendem na cor do tema
+	    - Divisória fina separa ações dos estados
+	  GLITCH > DASH (CFrame):
+	    - Toggle para ligar/desligar
+	    - Tecla configurável (padrão F2): impulso rápido para a frente,
+	      na direção da câmera, sem atravessar paredes
+	    - Slider de distância
+	  SETTINGS > PERFIL (AUTO-SAVE EM JSON):
+	    - Save Config: salva todos os toggles, sliders, inputs, dropdowns,
+	      teclas, cor do tema e cor do rastro do Soru
+	    - Load Config: carrega manualmente
+	    - Auto-Load Settings: ao executar o script, restaura tudo sozinho
+	    - Usa writefile/readfile/isfile (só existem em executores; se não
+	      existirem, o painel avisa e continua funcionando normalmente)
+	    - Arquivo: SukyWare/config.json
+	    - Os passos dos Macros NÃO são salvos
+	  FLY:
+	    - Voo suave (aceleração/frenagem com suavidade ajustável)
+	    - Velocidade de 10 a 200
+	    - Controle vertical: "Teclas" (Espaço sobe / Ctrl desce) ou "Câmera"
+	    - Tecla do Fly configurável
+	    - Noclip e Pulo infinito
+	  ESP:
+	    - Distância máxima até 20000 studs (range ultra longo)
+	    - Linhas (tracers) para TODOS os players ao mesmo tempo
+	    - Nome (apelido/usuário) e distância em metros ou studs
+	    - Box ESP (contorno do corpo, enxerga através da parede)
+	    - Filtro de time (ignorar aliados)
+	  SORU:
+	    - Direção pela câmera (com ou sem altura / 3D)
+	    - Instant Soru (sem cooldown)
+	    - Soru aéreo contínuo (flutua um instante no ar)
+	    - Rastro: linha, partículas ou ambos (cor, largura e duração)
+	    - Soru no alvo mais próximo na tela (tecla própria)
+
+	Animações (tudo configurável em Settings > Animações):
+	  - Abrir/fechar com zoom + fade (TweenService)
+	  - Fade entre abas
+	  - Hover em botões, toggles, sliders, inputs, dropdowns, keybinds e listas
+
+	Componentes disponíveis (use em qualquer coluna):
+	  UI.section(col, texto)
+	  UI.toggle(col, texto, padrao, callback, dica)
+	  UI.slider(col, texto, min, max, padrao, passo, callback)
+	  UI.input(col, texto, padrao, callback)
+	  UI.dropdown(col, texto, opcoes, padrao, callback)
+	  UI.keybind(col, texto, tecla, callback)
+	  UI.button(col, texto, callback)
+	  UI.playerList(col, callback)
+	  UI.colors(col, texto, cores, callback, aplicaNoTema)
+
+	Todo componente criado dentro de uma aba (menos a Macro) entra sozinho
+	no Save/Load, usando "Aba/Texto" como chave.
+]]
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+----------------------------------------------------------------------
+-- DETECÇÃO DE DISPOSITIVO (roda ANTES de montar qualquer interface)
+-- Celular/tablet = tem toque e não tem teclado. PC = o resto.
+-- Usado pela marca d'água para se posicionar sempre no canto inferior direito.
+----------------------------------------------------------------------
+local function detectMobile()
+	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+end
+local IS_MOBILE = detectMobile()
+
+----------------------------------------------------------------------
+-- TEMA
+----------------------------------------------------------------------
+local THEME = {
+	window = Color3.fromRGB(10, 10, 12),
+	header = Color3.fromRGB(16, 16, 18),
+	row = Color3.fromRGB(26, 26, 30),
+	input = Color3.fromRGB(18, 18, 21),
+	off = Color3.fromRGB(52, 52, 58),
+	line = Color3.fromRGB(36, 36, 42),
+	text = Color3.fromRGB(255, 255, 255),
+	muted = Color3.fromRGB(150, 150, 158),
+}
+local DEFAULT_ACCENT = Color3.fromRGB(56, 132, 255)
+local ACCENT = DEFAULT_ACCENT
+local toggleKey = Enum.KeyCode.RightShift
+local notificationsEnabled = true
+
+-- Configuração das animações (controlada na aba Settings)
+local anim = {
+	enabled = true, -- animar abrir/fechar
+	style = "Back", -- Back, Quart, Quad, Sine, Exponential
+	openTime = 0.18, -- segundos
+	openScale = 0.8, -- escala inicial (0.8 = 80%)
+	tabFade = true, -- fade ao trocar de aba
+	tabFadeTime = 0.15,
+	hover = true, -- efeito hover
+	hoverStrength = 8, -- quanto clareia (0-255)
+}
+local ANIM_DEFAULTS = table.clone(anim)
+
+-- Declaradas aqui no topo porque são usadas antes de serem definidas
+local showPanel, hidePanel
+local panelOpen, closing = false, false
+local hideToken = 0
+
+-- CLIP MODE: esconde tudo (painel, bolinha, FOV, tiles do HUD, tabela FPS,
+-- toasts), menos a marca d'água -- F8 sempre traz tudo de volta. A função de
+-- verdade só é definida lá embaixo (depois que bolinha/HUD existem).
+local applyClipMode
+local clipMode = false
+local clipToggle
+local hudItems = {} -- tiles + divisória do HUD mobile (registram-se sozinhos)
+local hudOn = true -- toggle "HUD mobile" na aba Settings
+local applyHudVisibility -- definida mais abaixo
+local userScale = 1 -- tamanho escolhido em Settings (a animação multiplica por ele)
+local currentTab
+
+-- Logo da bolinha: suba a imagem no Roblox e cole o ID aqui.
+-- Exemplo: "rbxassetid://1234567890"  (enquanto for "", a bolinha mostra o texto "SW")
+local LOGO_IMAGE = "rbxassetid://100154256196257"
+
+-- MODO DE TESTE
+--   true  = qualquer jogador usa tudo (bom para testar no Studio)
+--   false = só os UserIds da tabela ADMINS abaixo
+local TEST_MODE = true
+
+local ALL = { "Aimbot", "Speed", "Jump", "Soru", "Glide", "Fly", "ESP", "Combat", "Macro" }
+local ADMINS = {
+	[1111111111] = ALL,
+	[2222222222] = ALL,
+}
+
+local PERMS = {}
+do
+	local list = TEST_MODE and ALL or ADMINS[player.UserId]
+	if not list then
+		return
+	end
+	for _, name in ipairs(list) do
+		PERMS[name] = true
+	end
+end
+local function hasPerm(perm)
+	return PERMS[perm] == true
+end
+
+----------------------------------------------------------------------
+-- HELPERS
+----------------------------------------------------------------------
+local function new(class, props, parent)
+	local inst = Instance.new(class)
+	for k, v in pairs(props) do
+		inst[k] = v
+	end
+	inst.Parent = parent
+	return inst
+end
+
+local function corner(inst, radius)
+	return new("UICorner", { CornerRadius = UDim.new(0, radius) }, inst)
+end
+
+local function stroke(inst, color, thickness)
+	return new("UIStroke", {
+		Color = color or THEME.line,
+		Thickness = thickness or 1,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	}, inst)
+end
+
+local function tween(inst, time, props)
+	TweenService:Create(inst, TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local EASING = {
+	Back = Enum.EasingStyle.Back,
+	Quart = Enum.EasingStyle.Quart,
+	Quad = Enum.EasingStyle.Quad,
+	Sine = Enum.EasingStyle.Sine,
+	Exponential = Enum.EasingStyle.Exponential,
+}
+
+local function tweenEx(inst, time, props, style, dir)
+	local tw = TweenService:Create(inst, TweenInfo.new(time, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+	tw:Play()
+	return tw
+end
+
+local function lighten(c, amount)
+	local a = amount / 255
+	return Color3.new(math.min(c.R + a, 1), math.min(c.G + a, 1), math.min(c.B + a, 1))
+end
+
+-- Hover genérico: clareia a propriedade `prop` de `target` enquanto o mouse
+-- estiver sobre `hitbox` (se não passar hitbox, usa o próprio target).
+local function addHover(target, prop, base, hitbox)
+	hitbox = hitbox or target
+	hitbox.MouseEnter:Connect(function()
+		if anim.hover then
+			tween(target, 0.12, { [prop] = lighten(base, anim.hoverStrength) })
+		end
+	end)
+	hitbox.MouseLeave:Connect(function()
+		tween(target, 0.12, { [prop] = base })
+	end)
+end
+
+local function isPointer(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch
+end
+
+local orderCounter = 0
+local function nextOrder()
+	orderCounter += 1
+	return orderCounter
+end
+
+-- Tudo que usa a cor de destaque se registra aqui para mudar ao vivo
+local accentBinds = {}
+local function bindAccent(inst, prop)
+	table.insert(accentBinds, { inst = inst, prop = prop })
+	inst[prop] = ACCENT
+end
+
+local function setAccent(color)
+	ACCENT = color
+	for i = #accentBinds, 1, -1 do
+		local b = accentBinds[i]
+		if not b.inst:IsDescendantOf(game) then
+			table.remove(accentBinds, i)
+		else
+			tween(b.inst, 0.25, { [b.prop] = color })
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- JANELA
+----------------------------------------------------------------------
+local gui = new("ScreenGui", {
+	Name = "SukyWare",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	DisplayOrder = 100,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, player:WaitForChild("PlayerGui"))
+
+----------------------------------------------------------------------
+-- CARD DE CARREGAMENTO (5s, no centro da tela, sem cobrir o resto)
+-- Depois da barra chegar em 100% ele faz fade-out e o painel abre com a
+-- animação normal dele. A função de verdade (runLoadingScreen) só é
+-- chamada lá no fim do script, depois que tudo já foi construído.
+----------------------------------------------------------------------
+local runLoadingScreen
+do
+	local LOAD_TIME = 5
+	local CARD_W, CARD_H = 380, 190
+	local PAD = 18
+	local WHITE = Color3.new(1, 1, 1)
+	local GREEN = Color3.fromRGB(120, 230, 160)
+	local DIVIDER = Color3.fromRGB(45, 45, 52)
+
+	-- CanvasGroup: o fade do card inteiro é feito de uma vez com GroupTransparency
+	local card = new("CanvasGroup", {
+		Name = "SukyLoading",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(CARD_W, CARD_H),
+		BackgroundColor3 = Color3.fromRGB(12, 12, 14),
+		BorderSizePixel = 0,
+		GroupTransparency = 1,
+		ZIndex = 1000,
+	}, gui)
+	corner(card, 14)
+	-- linha branca do próprio card (a única que deve aparecer).
+	-- O UIStroke de um CanvasGroup NÃO acompanha o GroupTransparency, então
+	-- ele começa invisível e é animado junto com o card manualmente.
+	local cardStroke = stroke(card, WHITE, 1.5)
+	cardStroke.Transparency = 1
+	local cardScale = new("UIScale", { Scale = 0.92 }, card)
+
+	-- Cabeçalho: SUKYWARE (canto esquerdo) + badge V2 (canto direito)
+	new("TextLabel", {
+		Position = UDim2.fromOffset(PAD, 14),
+		Size = UDim2.fromOffset(240, 26),
+		BackgroundTransparency = 1,
+		Text = "SUKYWARE",
+		TextColor3 = WHITE,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 1001,
+	}, card)
+
+	local badge = new("Frame", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -PAD, 0, 18),
+		Size = UDim2.fromOffset(34, 18),
+		BackgroundColor3 = Color3.fromRGB(28, 64, 46),
+		BorderSizePixel = 0,
+		ZIndex = 1001,
+	}, card)
+	corner(badge, 6)
+	new("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "V2",
+		TextColor3 = GREEN,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		ZIndex = 1002,
+	}, badge)
+
+	new("TextLabel", {
+		Position = UDim2.fromOffset(PAD, 42),
+		Size = UDim2.fromOffset(300, 14),
+		BackgroundTransparency = 1,
+		Text = "PREMIUM EDITION · BLOX FRUITS",
+		TextColor3 = THEME.muted,
+		Font = Enum.Font.Gotham,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 1001,
+	}, card)
+
+	new("Frame", {
+		Position = UDim2.fromOffset(PAD, 64),
+		Size = UDim2.new(1, -PAD * 2, 0, 1),
+		BackgroundColor3 = DIVIDER,
+		BorderSizePixel = 0,
+		ZIndex = 1001,
+	}, card)
+
+	-- Status acima da barra + porcentagem no canto direito
+	local statusLabel = new("TextLabel", {
+		Position = UDim2.fromOffset(PAD, 80),
+		Size = UDim2.new(1, -PAD * 2 - 60, 0, 18),
+		BackgroundTransparency = 1,
+		Text = "Iniciando...",
+		TextColor3 = WHITE,
+		TextTransparency = 0,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 1001,
+	}, card)
+
+	local pctLabel = new("TextLabel", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -PAD, 0, 78),
+		Size = UDim2.fromOffset(60, 20),
+		BackgroundTransparency = 1,
+		Text = "0%",
+		TextColor3 = WHITE,
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 1001,
+	}, card)
+
+	-- Barra de progresso (a "partizinha" que se move durante os 5s)
+	local barTrack = new("Frame", {
+		Position = UDim2.fromOffset(PAD, 108),
+		Size = UDim2.new(1, -PAD * 2, 0, 6),
+		BackgroundColor3 = Color3.fromRGB(35, 35, 40),
+		BorderSizePixel = 0,
+		ZIndex = 1001,
+	}, card)
+	corner(barTrack, 3)
+
+	local barFill = new("Frame", {
+		Size = UDim2.fromScale(0, 1),
+		BorderSizePixel = 0,
+		ZIndex = 1002,
+	}, barTrack)
+	corner(barFill, 3)
+	bindAccent(barFill, "BackgroundColor3")
+
+	-- Rodapé
+	new("TextLabel", {
+		Position = UDim2.fromOffset(PAD, 126),
+		Size = UDim2.new(1, -PAD * 2, 0, 14),
+		BackgroundTransparency = 1,
+		Text = "Powered by SukyWare system Dev",
+		TextColor3 = THEME.muted,
+		Font = Enum.Font.Gotham,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 1001,
+	}, card)
+
+	new("Frame", {
+		Position = UDim2.fromOffset(PAD, 146),
+		Size = UDim2.new(1, -PAD * 2, 0, 1),
+		BackgroundColor3 = DIVIDER,
+		BorderSizePixel = 0,
+		ZIndex = 1001,
+	}, card)
+
+	-- Linha de etapa (embaixo): troca conforme o tempo passa
+	local stageLabel = new("TextLabel", {
+		Position = UDim2.fromOffset(PAD, 156),
+		Size = UDim2.new(1, -PAD * 2, 0, 16),
+		BackgroundTransparency = 1,
+		Text = "Verificando key...",
+		TextColor3 = Color3.fromRGB(110, 210, 150),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 1001,
+	}, card)
+
+	-- troca o texto com um fade rápido (sai, troca, entra)
+	local function swapText(label, text, color)
+		tweenEx(label, 0.12, { TextTransparency = 1 })
+		task.delay(0.12, function()
+			label.Text = text
+			if color then
+				label.TextColor3 = color
+			end
+			tweenEx(label, 0.12, { TextTransparency = 0 })
+		end)
+	end
+
+	function runLoadingScreen()
+		tweenEx(card, 0.25, { GroupTransparency = 0 })
+		tweenEx(cardStroke, 0.25, { Transparency = 0 })
+		tweenEx(cardScale, 0.3, { Scale = 1 }, Enum.EasingStyle.Back)
+		task.wait(0.2)
+
+		TweenService:Create(barFill, TweenInfo.new(LOAD_TIME, Enum.EasingStyle.Linear), {
+			Size = UDim2.fromScale(1, 1),
+		}):Play()
+
+		local t0 = os.clock()
+		local swappedMid = false
+		local lastStage = ""
+		while true do
+			local el = os.clock() - t0
+			if el >= LOAD_TIME then
+				break
+			end
+
+			pctLabel.Text = math.floor(el / LOAD_TIME * 100) .. "%"
+
+			if not swappedMid and el >= 3 then
+				swappedMid = true
+				swapText(statusLabel, "Carregando SukyWare.")
+			end
+
+			local stage
+			if el < 1.5 then
+				stage = "Verificando key..."
+			elseif el < 3 then
+				stage = "Montando interface..."
+			elseif el < 4.2 then
+				stage = "Carregando módulos..."
+			else
+				stage = "Finalizando..."
+			end
+			if stage ~= lastStage then
+				lastStage = stage
+				stageLabel.Text = stage
+			end
+
+			task.wait()
+		end
+
+		pctLabel.Text = "100%"
+		swapText(statusLabel, "Pronto para uso.", GREEN)
+		stageLabel.Text = "Etapa final: Script carregado."
+		task.wait(0.8)
+
+		tweenEx(card, 0.4, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		tweenEx(cardStroke, 0.4, { Transparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		tweenEx(cardScale, 0.4, { Scale = 0.92 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		task.wait(0.4)
+		card:Destroy()
+	end
+end
+
+-- CanvasGroup: permite fazer fade em tudo de uma vez com GroupTransparency
+-- Visible = false: a janela só aparece quando showPanel() for chamado (depois
+-- do carregamento). Antes isso ficava só "transparente", mas o contorno
+-- (UIStroke) continuava visível e formava aquela linha fora do card.
+local window = new("CanvasGroup", {
+	Size = UDim2.fromOffset(660, 410),
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	BackgroundColor3 = THEME.window,
+	BorderSizePixel = 0,
+	GroupTransparency = 1, -- começa invisível; showPanel() faz o fade-in
+	Visible = false,
+}, gui)
+corner(window, 12)
+stroke(window, THEME.line, 1)
+local uiScale = new("UIScale", { Scale = 1 }, window)
+
+-- Cabeçalho
+local header = new("Frame", {
+	Size = UDim2.new(1, 0, 0, 46),
+	BackgroundColor3 = THEME.header,
+	BorderSizePixel = 0,
+}, window)
+corner(header, 12)
+new("Frame", {
+	Size = UDim2.new(1, 0, 0, 12),
+	Position = UDim2.new(0, 0, 1, -12),
+	BackgroundColor3 = THEME.header,
+	BorderSizePixel = 0,
+}, header)
+
+local dragHandle = new("TextButton", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Text = "",
+	AutoButtonColor = false,
+	ZIndex = 2,
+}, header)
+
+local title = new("TextLabel", {
+	Size = UDim2.fromOffset(130, 46),
+	Position = UDim2.fromOffset(16, 0),
+	BackgroundTransparency = 1,
+	Text = "SukyWare",
+	Font = Enum.Font.GothamBold,
+	TextSize = 18,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	ZIndex = 3,
+}, header)
+title.TextColor3 = Color3.new(1, 1, 1)
+
+local closeButton = new("TextButton", {
+	Size = UDim2.fromOffset(30, 30),
+	Position = UDim2.new(1, -40, 0.5, -15),
+	BackgroundTransparency = 1,
+	Text = "X",
+	Font = Enum.Font.GothamBold,
+	TextSize = 16,
+	ZIndex = 4,
+}, header)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+
+local tabBar = new("Frame", {
+	Size = UDim2.new(1, -200, 1, 0),
+	Position = UDim2.fromOffset(150, 0),
+	BackgroundTransparency = 1,
+	ZIndex = 3,
+}, header)
+new("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	Padding = UDim.new(0, 2),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	VerticalAlignment = Enum.VerticalAlignment.Center,
+}, tabBar)
+
+local underline = new("Frame", {
+	Size = UDim2.fromOffset(0, 2),
+	Position = UDim2.new(0, 0, 1, -3),
+	BorderSizePixel = 0,
+	ZIndex = 4,
+}, header)
+corner(underline, 1)
+underline.BackgroundColor3 = Color3.new(1, 1, 1)
+
+new("Frame", {
+	Size = UDim2.new(1, 0, 0, 1),
+	Position = UDim2.fromOffset(0, 46),
+	BackgroundColor3 = THEME.line,
+	BorderSizePixel = 0,
+}, window)
+
+local body = new("Frame", {
+	Size = UDim2.new(1, 0, 1, -47),
+	Position = UDim2.fromOffset(0, 47),
+	BackgroundTransparency = 1,
+}, window)
+
+-- Arrastar pelo cabeçalho
+do
+	local dragging, dragStart, startPos
+	dragHandle.InputBegan:Connect(function(input)
+		if isPointer(input) then
+			dragging = true
+			dragStart = input.Position
+			startPos = window.Position
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - dragStart
+			window.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + d.X,
+				startPos.Y.Scale, startPos.Y.Offset + d.Y
+			)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if isPointer(input) then
+			dragging = false
+		end
+	end)
+end
+
+----------------------------------------------------------------------
+-- NOTIFICAÇÕES
+-- (subiram um pouco: o canto inferior direito é da marca d'água)
+----------------------------------------------------------------------
+local toastHolder = new("Frame", {
+	Size = UDim2.fromOffset(260, 300),
+	Position = UDim2.new(1, -276, 1, -352),
+	BackgroundTransparency = 1,
+	ZIndex = 200,
+}, gui)
+new("UIListLayout", {
+	Padding = UDim.new(0, 6),
+	VerticalAlignment = Enum.VerticalAlignment.Bottom,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, toastHolder)
+
+----------------------------------------------------------------------
+-- MARCA D'ÁGUA (logo "SUKYWARE", sempre visível -- até no Clip Mode)
+-- Fica SEMPRE colada no canto inferior direito da tela.
+-- O dispositivo já foi detectado lá no topo (IS_MOBILE):
+--   PC      = marca maior, margem de 12px
+--   Celular = marca menor, margem de 6px (mais colada no canto)
+-- Se o jogador trocar de PC para toque (ou vice-versa) no meio do jogo,
+-- ela se ajusta sozinha.
+----------------------------------------------------------------------
+local watermark = new("Frame", {
+	Name = "SukyWatermark",
+	AnchorPoint = Vector2.new(1, 1),
+	Position = UDim2.new(1, -12, 1, -12),
+	Size = UDim2.fromOffset(118, 26),
+	BackgroundColor3 = Color3.fromRGB(12, 12, 14),
+	BorderSizePixel = 0,
+	ZIndex = 200,
+}, gui)
+corner(watermark, 7)
+local watermarkStroke = stroke(watermark, Color3.new(1, 1, 1), 1)
+watermarkStroke.Transparency = 0.7
+local watermarkText = new("TextLabel", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Text = "SUKYWARE",
+	TextColor3 = Color3.new(1, 1, 1),
+	Font = Enum.Font.GothamBlack,
+	TextSize = 13,
+	ZIndex = 201,
+}, watermark)
+
+local function placeWatermark(mobile)
+	local margin = mobile and 6 or 12
+	watermark.AnchorPoint = Vector2.new(1, 1)
+	watermark.Position = UDim2.new(1, -margin, 1, -margin)
+	watermark.Size = mobile and UDim2.fromOffset(96, 22) or UDim2.fromOffset(118, 26)
+	watermarkText.TextSize = mobile and 11 or 13
+end
+placeWatermark(IS_MOBILE)
+
+UserInputService.LastInputTypeChanged:Connect(function()
+	local nowMobile = detectMobile()
+	if nowMobile ~= IS_MOBILE then
+		IS_MOBILE = nowMobile
+		placeWatermark(IS_MOBILE)
+	end
+end)
+
+local function notify(text)
+	if not notificationsEnabled then
+		return
+	end
+	local toast = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 36),
+		BackgroundColor3 = THEME.header,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		LayoutOrder = nextOrder(),
+	}, toastHolder)
+	corner(toast, 8)
+	local st = stroke(toast, THEME.line, 1)
+	st.Transparency = 1
+	local label = new("TextLabel", {
+		Size = UDim2.new(1, -16, 1, 0),
+		Position = UDim2.fromOffset(8, 0),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = THEME.text,
+		TextTransparency = 1,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+	}, toast)
+	tween(toast, 0.2, { BackgroundTransparency = 0 })
+	tween(st, 0.2, { Transparency = 0 })
+	tween(label, 0.2, { TextTransparency = 0 })
+	task.delay(2.5, function()
+		tween(toast, 0.3, { BackgroundTransparency = 1 })
+		tween(st, 0.3, { Transparency = 1 })
+		tween(label, 0.3, { TextTransparency = 1 })
+		task.wait(0.35)
+		toast:Destroy()
+	end)
+end
+
+----------------------------------------------------------------------
+-- MOSTRAR FPS (liga em Settings > Geral > "Mostrar FPS")
+-- Janelinha arrastável com FPS, ping, tempo de frame, memória e jogadores.
+-- Azul = FPS >= 50 e ping <= 150 ms | Vermelho = FPS abaixo de 50.
+----------------------------------------------------------------------
+local fpsOn = false
+local fpsWin
+do
+	local RunService = game:GetService("RunService")
+	local Stats = game:GetService("Stats")
+
+	local FPS_NEUTRAL = Color3.fromRGB(10, 10, 12)
+	local FPS_GOOD = Color3.fromRGB(18, 48, 110) -- azul meio
+	local FPS_BAD = Color3.fromRGB(96, 22, 28) -- vermelho meio
+	local FPS_LIMIT = 50
+	local PING_LIMIT = 150
+
+	fpsWin = new("TextButton", {
+		Name = "SukyFpsTable",
+		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.fromOffset(170, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = FPS_NEUTRAL,
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+		ZIndex = 140,
+	}, gui)
+	corner(fpsWin, 10)
+	local fpsRing = stroke(fpsWin, Color3.new(1, 1, 1), 1)
+	fpsRing.Transparency = 0.7
+	new("UIPadding", {
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 8),
+		PaddingLeft = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 10),
+	}, fpsWin)
+	new("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder }, fpsWin)
+
+	local head = new("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 14),
+		BackgroundTransparency = 1,
+		Text = "SUKYWARE  ·  STATS",
+		Font = Enum.Font.GothamBlack,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		LayoutOrder = 0,
+		ZIndex = 141,
+	}, fpsWin)
+	bindAccent(head, "TextColor3")
+
+	local function fpsRow(order, name)
+		local row = new("Frame", {
+			Size = UDim2.new(1, 0, 0, 16),
+			BackgroundTransparency = 1,
+			LayoutOrder = order,
+			ZIndex = 141,
+		}, fpsWin)
+		new("TextLabel", {
+			Size = UDim2.new(0.5, 0, 1, 0),
+			BackgroundTransparency = 1,
+			Text = name,
+			TextColor3 = THEME.muted,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 142,
+		}, row)
+		return new("TextLabel", {
+			Position = UDim2.fromScale(0.5, 0),
+			Size = UDim2.new(0.5, 0, 1, 0),
+			BackgroundTransparency = 1,
+			Text = "-",
+			TextColor3 = Color3.new(1, 1, 1),
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			ZIndex = 142,
+		}, row)
+	end
+
+	local vFps = fpsRow(1, "FPS")
+	vFps.Font = Enum.Font.GothamBlack
+	vFps.TextSize = 16
+	local vPing = fpsRow(2, "Ping")
+	local vFrame = fpsRow(3, "Frame")
+	local vMem = fpsRow(4, "Memória")
+	local vPlayers = fpsRow(5, "Jogadores")
+
+	-- contagem de FPS: atualiza a cada 0.5s
+	local frames, acc, fps, frameMs = 0, 0, 0, 0
+	RunService.RenderStepped:Connect(function(dt)
+		frames += 1
+		acc += dt
+		frameMs = dt * 1000
+		if acc >= 0.5 then
+			fps = frames / acc
+			frames, acc = 0, 0
+		end
+	end)
+
+	-- textos e cor da janela atualizados a cada 0.25s (só enquanto visível)
+	local lastUpdate = 0
+	local lastState
+	RunService.Heartbeat:Connect(function()
+		if not fpsWin.Visible or os.clock() - lastUpdate < 0.25 then
+			return
+		end
+		lastUpdate = os.clock()
+
+		local f = math.floor(fps + 0.5)
+		local ping = 0
+		pcall(function()
+			ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+		end)
+
+		vFps.Text = tostring(f)
+		vFps.TextColor3 = f >= 55 and Color3.fromRGB(70, 200, 120)
+			or f >= 30 and Color3.fromRGB(255, 150, 60)
+			or Color3.fromRGB(240, 70, 80)
+
+		vPing.Text = ping .. " ms"
+		vFrame.Text = string.format("%.1f ms", frameMs)
+
+		local mem = 0
+		pcall(function()
+			mem = Stats:GetTotalMemoryUsageMb()
+		end)
+		vMem.Text = string.format("%d MB", mem)
+		vPlayers.Text = tostring(#Players:GetPlayers())
+
+		-- cor da janela: vermelho se FPS < 50, azul se FPS ok e ping bom
+		local state = "neutral"
+		if f < FPS_LIMIT then
+			state = "bad"
+		elseif ping <= PING_LIMIT then
+			state = "good"
+		end
+		if state ~= lastState then
+			lastState = state
+			local bg = state == "bad" and FPS_BAD or state == "good" and FPS_GOOD or FPS_NEUTRAL
+			local edge = state == "bad" and Color3.fromRGB(240, 70, 80)
+				or state == "good" and Color3.fromRGB(80, 150, 255)
+				or Color3.new(1, 1, 1)
+			tween(fpsWin, 0.3, { BackgroundColor3 = bg })
+			tween(fpsRing, 0.3, { Color = edge, Transparency = state == "neutral" and 0.7 or 0.2 })
+		end
+	end)
+
+	-- arrastar a janelinha
+	local dragging, dStart, dStartPos
+	fpsWin.InputBegan:Connect(function(input)
+		if isPointer(input) then
+			dragging = true
+			dStart = input.Position
+			dStartPos = fpsWin.Position
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - dStart
+			fpsWin.Position = UDim2.new(
+				dStartPos.X.Scale, dStartPos.X.Offset + d.X,
+				dStartPos.Y.Scale, dStartPos.Y.Offset + d.Y
+			)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if isPointer(input) then
+			dragging = false
+		end
+	end)
+end
+
+----------------------------------------------------------------------
+-- ABAS
+----------------------------------------------------------------------
+local tabs = {}
+local buildingTab -- nome da aba que está sendo montada (usado pelo Save/Load)
+
+local function selectTab(name, instant)
+	local changed = currentTab ~= name
+	currentTab = name
+	for tabName, t in pairs(tabs) do
+		local active = (tabName == name)
+		if active then
+			if changed and anim.tabFade and not instant then
+				t.page.GroupTransparency = 1
+				t.page.Position = UDim2.fromOffset(0, 8)
+				t.page.Visible = true
+				tweenEx(t.page, anim.tabFadeTime, {
+					GroupTransparency = 0,
+					Position = UDim2.fromOffset(0, 0),
+				}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			else
+				t.page.GroupTransparency = 0
+				t.page.Position = UDim2.fromOffset(0, 0)
+				t.page.Visible = true
+			end
+		else
+			t.page.Visible = false
+		end
+		tween(t.button, 0.15, { TextColor3 = active and THEME.text or THEME.muted })
+		if active then
+			local x = (t.button.AbsolutePosition.X - header.AbsolutePosition.X) / uiScale.Scale
+			local w = t.button.AbsoluteSize.X / uiScale.Scale
+			tween(underline, 0.2, { Position = UDim2.new(0, x + 10, 1, -3), Size = UDim2.fromOffset(math.max(w - 20, 4), 2) })
+		end
+	end
+end
+
+local function createColumn(parent, position, size)
+	local col = new("ScrollingFrame", {
+		Size = size,
+		Position = position,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = THEME.off,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+	}, parent)
+	new("UIPadding", {
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 12),
+		PaddingLeft = UDim.new(0, 16),
+		PaddingRight = UDim.new(0, 16),
+	}, col)
+	new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, col)
+	return col
+end
+
+local tabCount = 0
+local function createTab(name)
+	tabCount += 1
+	buildingTab = name
+	local button = new("TextButton", {
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		Text = name,
+		TextColor3 = THEME.muted,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		AutoButtonColor = false,
+		LayoutOrder = tabCount,
+		ZIndex = 4,
+	}, tabBar)
+	new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, button)
+
+	-- Hover da aba (só nas abas inativas)
+	button.MouseEnter:Connect(function()
+		if anim.hover and currentTab ~= name then
+			tween(button, 0.12, { TextColor3 = lighten(THEME.muted, 60) })
+		end
+	end)
+	button.MouseLeave:Connect(function()
+		if currentTab ~= name then
+			tween(button, 0.12, { TextColor3 = THEME.muted })
+		end
+	end)
+
+	-- CanvasGroup: permite o fade de todos os elementos da aba de uma vez
+	local page = new("CanvasGroup", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		GroupTransparency = 0,
+		Visible = false,
+	}, body)
+	new("Frame", {
+		Size = UDim2.new(0, 1, 1, -20),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		BackgroundColor3 = THEME.line,
+		BorderSizePixel = 0,
+	}, page)
+
+	local left = createColumn(page, UDim2.fromScale(0, 0), UDim2.fromScale(0.5, 1))
+	local right = createColumn(page, UDim2.fromScale(0.5, 0), UDim2.fromScale(0.5, 1))
+
+	tabs[name] = { button = button, page = page }
+	button.MouseButton1Click:Connect(function()
+		selectTab(name)
+	end)
+	return left, right
+end
+
+----------------------------------------------------------------------
+-- REGISTRO PARA SAVE/LOAD
+-- Cada componente criado dentro de uma aba (menos a Macro) se registra
+-- aqui com a chave "Aba/Texto". O Save/Load percorre esta lista.
+----------------------------------------------------------------------
+local saveRegistry, saveOrder = {}, {}
+local function register(kind, text, widget)
+	if not buildingTab or buildingTab == "Macro" then
+		return widget
+	end
+	local base = buildingTab .. "/" .. text
+	local key, n = base, 1
+	while saveRegistry[key] do
+		n += 1
+		key = base .. "#" .. n
+	end
+	saveRegistry[key] = { kind = kind, w = widget }
+	table.insert(saveOrder, key)
+	return widget
+end
+
+----------------------------------------------------------------------
+-- COMPONENTES
+----------------------------------------------------------------------
+local UI = {}
+
+local function rowLabel(parent, text, width)
+	return new("TextLabel", {
+		Size = UDim2.new(1, -(width or 0), 1, 0),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = THEME.text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	}, parent)
+end
+
+function UI.section(col, text)
+	local f = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 30),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	new("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = THEME.muted,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, f)
+	new("Frame", {
+		Size = UDim2.new(1, 0, 0, 1),
+		Position = UDim2.new(0, 0, 1, -2),
+		BackgroundColor3 = THEME.line,
+		BorderSizePixel = 0,
+	}, f)
+end
+
+function UI.toggle(col, text, default, callback, hint, perm)
+	local on = default or false
+	local row = new("TextButton", {
+		Size = UDim2.new(1, 0, 0, 30),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+		LayoutOrder = nextOrder(),
+	}, col)
+
+	local ring = new("Frame", {
+		Size = UDim2.fromOffset(20, 20),
+		Position = UDim2.new(0, 0, 0.5, -10),
+		BackgroundColor3 = THEME.input,
+		BorderSizePixel = 0,
+	}, row)
+	corner(ring, 10)
+	local ringStroke = stroke(ring, THEME.off, 1.5)
+	addHover(ringStroke, "Color", THEME.off, row)
+	addHover(ring, "BackgroundColor3", THEME.input, row)
+
+	local dot = new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = on and UDim2.fromOffset(12, 12) or UDim2.fromOffset(0, 0),
+		BorderSizePixel = 0,
+	}, ring)
+	corner(dot, 6)
+	bindAccent(dot, "BackgroundColor3")
+
+	local label = rowLabel(row, text, 30)
+	label.Position = UDim2.fromOffset(30, 0)
+	label.Size = UDim2.new(1, -90, 1, 0)
+
+	if hint then
+		new("TextLabel", {
+			Size = UDim2.new(0, 60, 1, 0),
+			Position = UDim2.new(1, -60, 0, 0),
+			BackgroundTransparency = 1,
+			Text = hint,
+			TextColor3 = THEME.muted,
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Right,
+		}, row)
+	end
+
+	local function set(value, silent)
+		if value and perm and not hasPerm(perm) and not silent then
+			notify("Sem permissão: " .. text)
+			return
+		end
+		on = value
+		tween(dot, 0.15, { Size = on and UDim2.fromOffset(12, 12) or UDim2.fromOffset(0, 0) })
+		if callback and not silent then
+			task.spawn(callback, on)
+		end
+	end
+	row.MouseButton1Click:Connect(function()
+		set(not on)
+	end)
+	return register("toggle", text, { Set = set, Get = function() return on end })
+end
+
+function UI.slider(col, text, min, max, default, step, callback)
+	step = step or 1
+	local value = default or min
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 44),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+
+	local label = rowLabel(row, text, 70)
+	label.Size = UDim2.new(1, -70, 0, 22)
+
+	local valueLabel = new("TextLabel", {
+		Size = UDim2.fromOffset(70, 22),
+		Position = UDim2.new(1, -70, 0, 0),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	}, row)
+	valueLabel.TextColor3 = Color3.new(1, 1, 1)
+
+	local hit = new("TextButton", {
+		Size = UDim2.new(1, 0, 0, 20),
+		Position = UDim2.fromOffset(0, 24),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+	}, row)
+	local track = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 6),
+		Position = UDim2.new(0, 0, 0.5, -3),
+		BackgroundColor3 = THEME.off,
+		BorderSizePixel = 0,
+	}, hit)
+	corner(track, 3)
+	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0 }, track)
+	corner(fill, 3)
+	bindAccent(fill, "BackgroundColor3")
+	local knob = new("Frame", {
+		Size = UDim2.fromOffset(12, 12),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0, 0.5),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0,
+	}, track)
+	-- círculo perfeito em qualquer tamanho (a bolinha cresce no hover)
+	new("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
+
+	local function render()
+		local rel = (value - min) / (max - min)
+		fill.Size = UDim2.fromScale(rel, 1)
+		knob.Position = UDim2.fromScale(rel, 0.5)
+		valueLabel.Text = string.format("%g", value)
+	end
+
+	local function apply(newValue, silent)
+		newValue = math.clamp(newValue, min, max)
+		if newValue ~= value then
+			value = newValue
+			render()
+			if callback and not silent then
+				task.spawn(callback, value)
+			end
+		end
+	end
+
+	local function setFromX(x)
+		local rel = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+		apply(math.floor((min + (max - min) * rel) / step + 0.5) * step)
+	end
+
+	local hovering, dragging = false, false
+
+	local function refreshKnob()
+		local big = anim.hover and (hovering or dragging)
+		tween(knob, 0.1, { Size = big and UDim2.fromOffset(16, 16) or UDim2.fromOffset(12, 12) })
+		tween(track, 0.1, { BackgroundColor3 = big and lighten(THEME.off, anim.hoverStrength) or THEME.off })
+	end
+
+	hit.MouseEnter:Connect(function()
+		hovering = true
+		refreshKnob()
+	end)
+	hit.MouseLeave:Connect(function()
+		hovering = false
+		refreshKnob()
+	end)
+	hit.InputBegan:Connect(function(input)
+		if isPointer(input) then
+			dragging = true
+			setFromX(input.Position.X)
+			refreshKnob()
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			setFromX(input.Position.X)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if dragging and isPointer(input) then
+			dragging = false
+			refreshKnob()
+		end
+	end)
+
+	render()
+	return register("slider", text, { Set = apply, Get = function() return value end })
+end
+
+function UI.input(col, text, default, callback)
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	rowLabel(row, text, 160)
+	local box = new("TextBox", {
+		Size = UDim2.fromOffset(150, 26),
+		Position = UDim2.new(1, -150, 0.5, -13),
+		BackgroundColor3 = THEME.input,
+		Text = tostring(default or ""),
+		TextColor3 = THEME.text,
+		PlaceholderColor3 = THEME.muted,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		ClearTextOnFocus = false,
+	}, row)
+	corner(box, 6)
+	addHover(box, "BackgroundColor3", THEME.input)
+	local st = stroke(box, THEME.line, 1)
+	box.Focused:Connect(function()
+		tween(st, 0.15, { Color = ACCENT })
+	end)
+	box.FocusLost:Connect(function()
+		tween(st, 0.15, { Color = THEME.line })
+		if callback then
+			task.spawn(callback, box.Text)
+		end
+	end)
+	-- Set(valor, true) também dispara o callback (usado pelo Load Config)
+	return register("input", text, {
+		Get = function() return box.Text end,
+		Set = function(v, fire)
+			box.Text = tostring(v)
+			if fire and callback then
+				task.spawn(callback, box.Text)
+			end
+		end,
+	})
+end
+
+-- Dropdown (a lista fica no nível do ScreenGui para não ser cortada pela coluna)
+local openList
+local catcher = new("TextButton", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Text = "",
+	AutoButtonColor = false,
+	Visible = false,
+	ZIndex = 99,
+}, gui)
+
+local function closeDropdown()
+	if openList then
+		openList:Destroy()
+		openList = nil
+	end
+	catcher.Visible = false
+end
+catcher.MouseButton1Click:Connect(closeDropdown)
+
+function UI.dropdown(col, text, options, default, callback)
+	local current = default or options[1]
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	rowLabel(row, text, 160)
+	local box = new("TextButton", {
+		Size = UDim2.fromOffset(150, 26),
+		Position = UDim2.new(1, -150, 0.5, -13),
+		BackgroundColor3 = THEME.input,
+		Text = current,
+		TextColor3 = THEME.text,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		AutoButtonColor = false,
+	}, row)
+	corner(box, 6)
+	addHover(box, "BackgroundColor3", THEME.input)
+	stroke(box, THEME.line, 1)
+	new("TextLabel", {
+		Size = UDim2.fromOffset(20, 26),
+		Position = UDim2.new(1, -22, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "v",
+		TextColor3 = THEME.muted,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+	}, box)
+
+	box.MouseButton1Click:Connect(function()
+		closeDropdown()
+		local s = userScale
+		local itemH = 26 * s
+		local list = new("Frame", {
+			Size = UDim2.fromOffset(box.AbsoluteSize.X, itemH * #options + 4 * s),
+			Position = UDim2.fromOffset(box.AbsolutePosition.X, box.AbsolutePosition.Y + box.AbsoluteSize.Y + 2),
+			BackgroundColor3 = THEME.header,
+			BorderSizePixel = 0,
+			ZIndex = 100,
+		}, gui)
+		corner(list, 6)
+		stroke(list, THEME.line, 1)
+		for i, option in ipairs(options) do
+			local item = new("TextButton", {
+				Size = UDim2.new(1, 0, 0, itemH),
+				Position = UDim2.fromOffset(0, 2 * s + (i - 1) * itemH),
+				BackgroundTransparency = 1,
+				Text = option,
+				TextColor3 = option == current and THEME.text or THEME.muted,
+				Font = option == current and Enum.Font.GothamBold or Enum.Font.Gotham,
+				TextSize = math.floor(13 * s),
+				AutoButtonColor = false,
+				ZIndex = 101,
+			}, list)
+			item.MouseEnter:Connect(function()
+				item.TextColor3 = THEME.text
+			end)
+			item.MouseLeave:Connect(function()
+				item.TextColor3 = option == current and THEME.text or THEME.muted
+			end)
+			item.MouseButton1Click:Connect(function()
+				current = option
+				box.Text = option
+				closeDropdown()
+				if callback then
+					task.spawn(callback, option)
+				end
+			end)
+		end
+		openList = list
+		catcher.Visible = true
+	end)
+	return register("dropdown", text, {
+		Get = function() return current end,
+		Set = function(v, fire)
+			current = v
+			box.Text = v
+			if fire and callback then
+				task.spawn(callback, v)
+			end
+		end,
+	})
+end
+
+function UI.keybind(col, text, defaultKey, callback)
+	local key = defaultKey
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	rowLabel(row, text, 100)
+	local box = new("TextButton", {
+		Size = UDim2.fromOffset(90, 26),
+		Position = UDim2.new(1, -90, 0.5, -13),
+		BackgroundColor3 = THEME.input,
+		Text = key.Name,
+		TextColor3 = THEME.text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+		AutoButtonColor = false,
+	}, row)
+	corner(box, 6)
+	addHover(box, "BackgroundColor3", THEME.input)
+	local st = stroke(box, THEME.line, 1)
+
+	box.MouseButton1Click:Connect(function()
+		box.Text = "..."
+		tween(st, 0.15, { Color = ACCENT })
+		local conn
+		conn = UserInputService.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Keyboard then
+				conn:Disconnect()
+				if input.KeyCode ~= Enum.KeyCode.Escape then
+					key = input.KeyCode
+					if callback then
+						task.spawn(callback, key)
+					end
+				end
+				box.Text = key.Name
+				tween(st, 0.15, { Color = THEME.line })
+			end
+		end)
+	end)
+	return register("keybind", text, {
+		Get = function() return key end,
+		Set = function(k, fire)
+			key = k
+			box.Text = k.Name
+			if fire and callback then
+				task.spawn(callback, k)
+			end
+		end,
+	})
+end
+
+function UI.button(col, text, callback)
+	local b = new("TextButton", {
+		Size = UDim2.new(1, 0, 0, 32),
+		BackgroundColor3 = THEME.input,
+		Text = text,
+		TextColor3 = THEME.text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		AutoButtonColor = false,
+		LayoutOrder = nextOrder(),
+	}, col)
+	corner(b, 6)
+	stroke(b, THEME.line, 1)
+	addHover(b, "BackgroundColor3", THEME.input)
+	b.MouseButton1Click:Connect(function()
+		if callback then
+			task.spawn(callback)
+		end
+	end)
+end
+
+function UI.playerList(col, callback)
+	local holder = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 100),
+		BackgroundColor3 = THEME.input,
+		BorderSizePixel = 0,
+		LayoutOrder = nextOrder(),
+	}, col)
+	corner(holder, 8)
+	stroke(holder, THEME.line, 1)
+
+	local list = new("ScrollingFrame", {
+		Size = UDim2.new(1, -8, 1, -8),
+		Position = UDim2.fromOffset(4, 4),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = THEME.off,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+	}, holder)
+	new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.Name }, list)
+
+	local selected
+	local entries = {}
+
+	local function refresh()
+		for _, e in pairs(entries) do
+			e.button:Destroy()
+		end
+		table.clear(entries)
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player then
+				local b = new("TextButton", {
+					Name = p.Name,
+					Size = UDim2.new(1, 0, 0, 28),
+					BackgroundColor3 = THEME.row,
+					Text = p.Name,
+					TextColor3 = THEME.text,
+					Font = Enum.Font.GothamMedium,
+					TextSize = 13,
+					AutoButtonColor = false,
+				}, list)
+				corner(b, 6)
+				addHover(b, "BackgroundColor3", THEME.row)
+				local st = stroke(b, ACCENT, 1.5)
+				bindAccent(st, "Color")
+				st.Transparency = (selected == p) and 0 or 1
+				entries[p] = { button = b, stroke = st }
+				b.MouseButton1Click:Connect(function()
+					if selected and entries[selected] then
+						entries[selected].stroke.Transparency = 1
+					end
+					if selected == p then
+						selected = nil
+					else
+						selected = p
+						st.Transparency = 0
+					end
+					if callback then
+						task.spawn(callback, selected)
+					end
+				end)
+			end
+		end
+	end
+
+	Players.PlayerAdded:Connect(refresh)
+	Players.PlayerRemoving:Connect(function(p)
+		if selected == p then
+			selected = nil
+			if callback then
+				task.spawn(callback, nil)
+			end
+		end
+		task.defer(refresh)
+	end)
+	refresh()
+	return { Get = function() return selected end }
+end
+
+-- aplicaNoTema: por padrão (nil/true) a cor clicada vira a cor do tema do painel.
+-- Passe false para usar a paleta só para o callback (ex.: cor do rastro do Soru).
+function UI.colors(col, text, colors, callback, applyTheme)
+	local row = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		LayoutOrder = nextOrder(),
+	}, col)
+	rowLabel(row, text, #colors * 26 + 10)
+	for i, color in ipairs(colors) do
+		local s = new("TextButton", {
+			Size = UDim2.fromOffset(20, 20),
+			Position = UDim2.new(1, -(#colors - i + 1) * 26 + 6, 0.5, -10),
+			BackgroundColor3 = color,
+			Text = "",
+			AutoButtonColor = false,
+		}, row)
+		corner(s, 10)
+		s.MouseButton1Click:Connect(function()
+			if applyTheme ~= false then
+				setAccent(color)
+			end
+			if callback then
+				task.spawn(callback, color)
+			end
+		end)
+	end
+end
+
+function UI.listBox(col, height, onSelect)
+	local holder = new("Frame", {
+		Size = UDim2.new(1, 0, 0, height),
+		BackgroundColor3 = THEME.input,
+		BorderSizePixel = 0,
+		LayoutOrder = nextOrder(),
+	}, col)
+	corner(holder, 8)
+	stroke(holder, THEME.line, 1)
+
+	local list = new("ScrollingFrame", {
+		Size = UDim2.new(1, -8, 1, -8),
+		Position = UDim2.fromOffset(4, 4),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = THEME.off,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+	}, holder)
+	new("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+
+	local items, selected, rows = {}, nil, {}
+
+	local function render()
+		for _, r in ipairs(rows) do
+			r:Destroy()
+		end
+		table.clear(rows)
+		if selected and selected > #items then
+			selected = nil
+		end
+		if #items == 0 then
+			rows[1] = new("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 24),
+				BackgroundTransparency = 1,
+				Text = "Nenhum passo ainda",
+				TextColor3 = THEME.muted,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+			}, list)
+			return
+		end
+		for i, text in ipairs(items) do
+			local isSel = selected == i
+			local b = new("TextButton", {
+				Size = UDim2.new(1, 0, 0, 24),
+				BackgroundColor3 = THEME.row,
+				BackgroundTransparency = isSel and 0 or 1,
+				Text = "  " .. text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				TextColor3 = isSel and THEME.text or THEME.muted,
+				Font = Enum.Font.Gotham,
+				TextSize = 12,
+				AutoButtonColor = false,
+				LayoutOrder = i,
+			}, list)
+			corner(b, 5)
+			b.MouseEnter:Connect(function()
+				if anim.hover and selected ~= i then
+					tween(b, 0.1, { BackgroundTransparency = 0.6 })
+				end
+			end)
+			b.MouseLeave:Connect(function()
+				if selected ~= i then
+					tween(b, 0.1, { BackgroundTransparency = 1 })
+				end
+			end)
+			b.MouseButton1Click:Connect(function()
+				selected = if selected == i then nil else i
+				render()
+				if onSelect then
+					onSelect(selected)
+				end
+			end)
+			rows[i] = b
+		end
+	end
+	render()
+
+	return {
+		Set = function(newItems, sel)
+			items, selected = newItems, sel
+			render()
+		end,
+		Get = function()
+			return selected
+		end,
+	}
+end
+
+----------------------------------------------------------------------
+-- LÓGICA
+----------------------------------------------------------------------
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
+
+local cfg = {
+	aimbot = false,
+	silentPlayers = false,
+	silentNpc = false,
+	showFov = false,
+	fovSize = 360, -- diâmetro do círculo em pixels (o painel controla o RAIO = metade)
+	smooth = 0.35, -- força da mira: 0.05 = suave ... 1 = trava na hora
+	aimPart = "Cabeça", -- "Cabeça" ou "Tronco"
+	wallCheck = true,
+	teamCheck = true,
+	priority = "Mais próximo",
+	fovMode = "V1", -- V1 = círculo no mouse, V2 = círculo no centro da tela
+	aimActivation = "Automático (ESP)", -- "Automático (ESP)" ou "Segurar botão direito"
+	aimTargetMode = "Players", -- "Players", "NPCs" ou "Both" -- quem o Aimbot pode travar
+	lockedTarget = nil,
+	speedOn = false,
+	walkSpeed = 80,
+	jumpForce = 300,
+	noclip = false,
+	soru = {
+		enabled = false,
+		key = Enum.KeyCode.Q,
+		distance = 45,
+		cooldown = 2,
+		direction = "Câmera", -- "Câmera", "Movimento" ou "Mouse"
+		pitch = true, -- Câmera: usa também a altura (olhar pra cima/baixo = voar pra cima/baixo)
+		instant = false, -- Instant Soru: sem cooldown
+		air = false, -- Soru aéreo contínuo
+		airHover = 0.3, -- segundos flutuando no ar depois do Soru aéreo
+		airUntil = 0,
+		-- efeitos
+		trail = true,
+		trailMode = "Linha", -- "Linha", "Partículas" ou "Ambos"
+		trailColor = Color3.new(1, 1, 1),
+		trailWidth = 1.5,
+		trailTime = 0.4,
+		sound = true,
+		-- Soru no alvo mais próximo
+		targetKey = Enum.KeyCode.Y,
+		targetPlayers = true,
+		targetNpc = true,
+		readyAt = 0,
+	},
+	glideA = { enabled = false, key = Enum.KeyCode.H, speed = 350, time = 20, keepHeight = true, busy = false },
+	glideB = { enabled = false, key = Enum.KeyCode.J, speed = 300, time = 15, keepHeight = true, busy = false },
+	dash = {
+		enabled = false,
+		key = Enum.KeyCode.F2,
+		distance = 30,
+		impulseForce = 90, -- Dash (CFrame) da aba Glitch
+		impulseTime = 0.2, -- velocidade/duração do impulso físico (duplo toque / botão mobile)
+	},
+	fly = {
+		key = Enum.KeyCode.F,
+		speed = 60,
+		vertical = "Teclas", -- "Teclas" (Espaço/Ctrl) ou "Câmera" (sobe/desce olhando pra cima/baixo)
+		smooth = 50, -- 0 = resposta instantânea ... 100 = bem deslizante
+		infJump = false,
+		lastJump = 0,
+	},
+}
+
+-- Ponte para os scripts do SEU jogo (skills, silent aim, teclas virtuais).
+local hooks = {
+	FastSkill = false,
+	InstantSoru = false, -- o script do Soru do seu jogo pode ler isto para pular o delay nativo
+	AirSoru = false, -- idem: permitir Soru no ar sem tocar no chão
+}
+shared.SukyWare = hooks
+
+local function num(text, min, max, fallback)
+	local n = tonumber(text)
+	if not n then
+		return fallback
+	end
+	return math.clamp(n, min, max)
+end
+
+local function getChar()
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if hum and root and hum.Health > 0 then
+		return char, hum, root
+	end
+	return nil
+end
+
+----------------------------------------------------------------------
+-- ALVOS (aimbot / silent aim)
+----------------------------------------------------------------------
+local function aimPartOf(char)
+	if cfg.aimPart == "Tronco" then
+		return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+	end
+	return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+end
+
+local npcCache, npcCacheAt = {}, 0
+
+local function refreshNpcs()
+	if os.clock() - npcCacheAt < 1 then
+		return
+	end
+	npcCacheAt = os.clock()
+	table.clear(npcCache)
+	for _, d in ipairs(workspace:GetDescendants()) do
+		if d:IsA("Humanoid") and d.Health > 0 then
+			local model = d.Parent
+			if model and model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
+				local part = aimPartOf(model)
+				if part then
+					table.insert(npcCache, { part = part, hum = d, char = model })
+				end
+			end
+		end
+	end
+end
+
+local function collectTargets(includePlayers, includeNpcs)
+	local list = {}
+	if includePlayers then
+		for _, other in ipairs(Players:GetPlayers()) do
+			local sameTeam = cfg.teamCheck and other.Team ~= nil and other.Team == player.Team
+			if other ~= player and not sameTeam then
+				local char = other.Character
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				local part = char and aimPartOf(char)
+				if hum and hum.Health > 0 and part then
+					table.insert(list, { part = part, hum = hum, char = char })
+				end
+			end
+		end
+	end
+	if includeNpcs then
+		refreshNpcs()
+		for _, e in ipairs(npcCache) do
+			if e.part.Parent and e.hum.Health > 0 then
+				table.insert(list, e)
+			end
+		end
+	end
+	return list
+end
+
+local function fovCenter()
+	local camera = workspace.CurrentCamera
+	if cfg.fovMode == "V2" then
+		return camera.ViewportSize / 2
+	end
+	return UserInputService:GetMouseLocation()
+end
+
+local function isVisible(e)
+	local camera = workspace.CurrentCamera
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { player.Character }
+	local origin = camera.CFrame.Position
+	local result = workspace:Raycast(origin, e.part.Position - origin, params)
+	return result == nil or result.Instance:IsDescendantOf(e.char)
+end
+
+local function pickTarget(list, needVisible)
+	local camera = workspace.CurrentCamera
+	local center = fovCenter()
+	local _, _, myRoot = getChar()
+	local best, bestScore
+	for _, e in ipairs(list) do
+		local pos, onScreen = camera:WorldToViewportPoint(e.part.Position)
+		if onScreen then
+			local screenDist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+			if screenDist <= cfg.fovSize / 2 and (not needVisible or not cfg.wallCheck or isVisible(e)) then
+				local score
+				if cfg.priority == "Menor vida" then
+					score = e.hum.Health
+				elseif cfg.priority == "Mais perto da mira" then
+					score = screenDist
+				else
+					score = myRoot and (e.part.Position - myRoot.Position).Magnitude or screenDist
+				end
+				if not bestScore or score < bestScore then
+					best, bestScore = e, score
+				end
+			end
+		end
+	end
+	return best
+end
+
+-- ALVO COMPARTILHADO: o mesmo jogador que o ESP destaca é quem o Aimbot
+-- trava e quem as habilidades do SEU jogo recebem pelo hook abaixo.
+-- Assim ESP + Aimbot + Silent Aim sempre apontam para o mesmo inimigo.
+local currentLockPart, currentLockPlayer
+
+local function updateLock()
+	local locked = cfg.lockedTarget
+	if locked and locked.Parent then
+		local char = locked.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		local part = char and aimPartOf(char)
+		if hum and hum.Health > 0 and part then
+			currentLockPart, currentLockPlayer = part, locked
+			return
+		end
+	end
+
+	-- Players sempre tem prioridade sobre NPC: só cai pra NPC se o modo
+	-- permitir ("NPCs" ou "Both") e nenhum player válido foi encontrado.
+	local mode = cfg.aimTargetMode
+	local best
+
+	if mode ~= "NPCs" then
+		best = pickTarget(collectTargets(true, false), true)
+	end
+	if not best and mode ~= "Players" then
+		best = pickTarget(collectTargets(false, true), true)
+	end
+
+	if best then
+		currentLockPart = best.part
+		currentLockPlayer = Players:GetPlayerFromCharacter(best.char)
+	else
+		currentLockPart, currentLockPlayer = nil, nil
+	end
+end
+
+-- O script de arma/skill do SEU jogo chama isto para saber onde mirar:
+--   local part = shared.SukyWare and shared.SukyWare.GetSilentAimPart()
+--   if part then  alvo = part.Position  end
+-- Ele devolve exatamente o mesmo alvo que o ESP achou e o Aimbot travou.
+function hooks.GetSilentAimPart()
+	if not hasPerm("Aimbot") or not (cfg.silentPlayers or cfg.silentNpc) then
+		return nil
+	end
+	return currentLockPart
+end
+
+local fovCircle = new("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	BackgroundTransparency = 1,
+	Size = UDim2.fromOffset(cfg.fovSize, cfg.fovSize),
+	Visible = false,
+	ZIndex = 0,
+}, gui)
+corner(fovCircle, 9999)
+bindAccent(stroke(fovCircle, Color3.new(1, 1, 1), 1.5), "Color")
+
+RunService.RenderStepped:Connect(function()
+	fovCircle.Visible = cfg.showFov
+	if cfg.showFov then
+		local c = fovCenter()
+		fovCircle.Position = UDim2.fromOffset(c.X, c.Y)
+		fovCircle.Size = UDim2.fromOffset(cfg.fovSize, cfg.fovSize)
+	end
+
+	updateLock() -- recalcula o alvo que o ESP acabou de achar, todo frame
+
+	if not cfg.aimbot then
+		return
+	end
+	local holding = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+	if cfg.aimActivation ~= "Automático (ESP)" and not holding then
+		return
+	end
+	if currentLockPart then
+		local camera = workspace.CurrentCamera
+		local goal = CFrame.lookAt(camera.CFrame.Position, currentLockPart.Position)
+		camera.CFrame = camera.CFrame:Lerp(goal, cfg.smooth)
+	end
+end)
+
+----------------------------------------------------------------------
+-- VELOCIDADE (o servidor aplica e limita)
+----------------------------------------------------------------------
+local speedBackup
+local function applySpeed()
+	local _, hum = getChar()
+	if not hum then
+		return
+	end
+	if cfg.speedOn then
+		speedBackup = speedBackup or hum.WalkSpeed
+		hum.WalkSpeed = math.clamp(cfg.walkSpeed, 0, 250)
+	elseif speedBackup then
+		hum.WalkSpeed = speedBackup
+		speedBackup = nil
+	end
+end
+
+----------------------------------------------------------------------
+-- SUPER PULO (tecla G)
+----------------------------------------------------------------------
+local function jumpBoost()
+	if not hasPerm("Jump") then
+		return
+	end
+	local _, _, root = getChar()
+	if root then
+		local v = root.AssemblyLinearVelocity
+		root.AssemblyLinearVelocity = Vector3.new(v.X, math.clamp(cfg.jumpForce, 0, 400), v.Z)
+	end
+end
+
+----------------------------------------------------------------------
+-- DESLIZE / GLITCH
+----------------------------------------------------------------------
+local function makeGlide(g)
+	return function()
+		if not g.enabled or g.busy then
+			return
+		end
+		local _, hum, root = getChar()
+		if not root then
+			return
+		end
+		local dir = hum.MoveDirection
+		if dir.Magnitude < 0.1 then
+			local look = workspace.CurrentCamera.CFrame.LookVector
+			dir = Vector3.new(look.X, 0, look.Z)
+		end
+		if dir.Magnitude < 0.01 then
+			return
+		end
+		dir = dir.Unit
+		g.busy = true
+		local endAt = os.clock() + g.time / 100
+		local conn
+		conn = RunService.Heartbeat:Connect(function()
+			local _, _, r = getChar()
+			if not r or os.clock() >= endAt then
+				conn:Disconnect()
+				g.busy = false
+				return
+			end
+			local y = g.keepHeight and 0 or r.AssemblyLinearVelocity.Y
+			r.AssemblyLinearVelocity = Vector3.new(dir.X * g.speed, y, dir.Z * g.speed)
+		end)
+	end
+end
+
+local triggerGlideA = makeGlide(cfg.glideA)
+local triggerGlideB = makeGlide(cfg.glideB)
+
+-- DASH (CFrame para a frente, na direção da câmera) -------------------
+local function doDash()
+	local d = cfg.dash
+	if not d.enabled or not hasPerm("Glide") then
+		return
+	end
+	local char, _, root = getChar()
+	if not root then
+		return
+	end
+	local look = workspace.CurrentCamera.CFrame.LookVector
+	local dir = Vector3.new(look.X, 0, look.Z)
+	if dir.Magnitude < 0.01 then
+		return
+	end
+	dir = dir.Unit
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { char }
+	local hit = workspace:Raycast(root.Position, dir * d.distance, params)
+	local travel = hit and math.max(hit.Distance - 3, 0) or d.distance -- não atravessa parede
+	root.CFrame = root.CFrame + dir * travel
+end
+
+-- IMPULSO (LinearVelocity, sem teleporte) -------------------------------
+-- Empurrão físico fluido para a frente: duplo toque na tecla do dash no PC,
+-- ou botão correspondente no HUD mobile. Usa Attachment+LinearVelocity por
+-- um tempo curto (como o Fly) em vez de mover o CFrame instantaneamente.
+local function doDashImpulse()
+	local d = cfg.dash
+	if not d.enabled or not hasPerm("Glide") then
+		return
+	end
+	local _char, _, root = getChar()
+	if not root then
+		return
+	end
+	local look = workspace.CurrentCamera.CFrame.LookVector
+	local dir = Vector3.new(look.X, 0, look.Z)
+	if dir.Magnitude < 0.01 then
+		return
+	end
+	dir = dir.Unit
+
+	local att = Instance.new("Attachment")
+	att.Parent = root
+	local lv = Instance.new("LinearVelocity")
+	lv.Attachment0 = att
+	lv.MaxForce = math.huge
+	lv.RelativeTo = Enum.ActuatorRelativeTo.World
+	lv.VectorVelocity = dir * d.impulseForce + Vector3.new(0, root.AssemblyLinearVelocity.Y, 0)
+	lv.Parent = root
+
+	task.delay(d.impulseTime, function()
+		if lv then
+			lv:Destroy()
+		end
+		if att then
+			att:Destroy()
+		end
+	end)
+end
+
+----------------------------------------------------------------------
+-- SORU (o servidor move o personagem)
+----------------------------------------------------------------------
+-- Direção do Soru normal (tecla Q):
+--   "Câmera"    = exatamente para onde a câmera aponta (com altura se "pitch" estiver ligado)
+--   "Movimento" = para onde você está andando
+--   "Mouse"     = para o ponto do mundo sob o mouse
+local function getSoruDirection()
+	local _, hum, root = getChar()
+	if not root then
+		return nil
+	end
+	local camera = workspace.CurrentCamera
+	local dir
+	if cfg.soru.direction == "Câmera" then
+		local l = camera.CFrame.LookVector
+		dir = cfg.soru.pitch and l or Vector3.new(l.X, 0, l.Z)
+	elseif cfg.soru.direction == "Mouse" then
+		local m = UserInputService:GetMouseLocation()
+		local ray = camera:ViewportPointToRay(m.X, m.Y)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { player.Character }
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+		local pos = hit and hit.Position or (ray.Origin + ray.Direction * 100)
+		local d = pos - root.Position
+		dir = Vector3.new(d.X, 0, d.Z)
+	else
+		dir = hum.MoveDirection
+		if dir.Magnitude < 0.1 then
+			local l = camera.CFrame.LookVector
+			dir = Vector3.new(l.X, 0, l.Z)
+		end
+	end
+	if dir.Magnitude < 0.01 then
+		return nil
+	end
+	return dir.Unit
+end
+
+local SORU_SOUND_ID = "" -- ex.: "rbxassetid://123456" (vazio = sem som)
+
+-- Rastro em linha (Part neon que some) e/ou em partículas (ParticleEmitter)
+local function soruEffects(origin, target, dir, travel)
+	local s = cfg.soru
+	local mid = origin:Lerp(target, 0.5)
+	-- se o Soru for quase vertical, o "cima" do CFrame precisa mudar para não dar erro
+	local up = math.abs(dir.Y) > 0.99 and Vector3.xAxis or Vector3.yAxis
+	local cf = CFrame.lookAt(mid, target, up)
+
+	if s.trailMode == "Linha" or s.trailMode == "Ambos" then
+		local part = Instance.new("Part")
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.Material = Enum.Material.Neon
+		part.Color = s.trailColor
+		part.Size = Vector3.new(s.trailWidth, s.trailWidth, travel)
+		part.CFrame = cf
+		part.Parent = workspace
+		TweenService:Create(part, TweenInfo.new(s.trailTime), {
+			Transparency = 1,
+			Size = Vector3.new(0.1, 0.1, travel),
+		}):Play()
+		Debris:AddItem(part, s.trailTime + 0.1)
+	end
+
+	if s.trailMode == "Partículas" or s.trailMode == "Ambos" then
+		local box = Instance.new("Part")
+		box.Anchored = true
+		box.CanCollide = false
+		box.CanQuery = false
+		box.Transparency = 1
+		box.Size = Vector3.new(math.max(s.trailWidth, 1.5), math.max(s.trailWidth, 1.5), travel)
+		box.CFrame = cf
+		box.Parent = workspace
+
+		local em = Instance.new("ParticleEmitter")
+		em.Rate = 0
+		em.Shape = Enum.ParticleEmitterShape.Box
+		em.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
+		em.Color = ColorSequence.new(s.trailColor)
+		em.LightEmission = 1
+		em.Lifetime = NumberRange.new(s.trailTime, s.trailTime * 1.5)
+		em.Speed = NumberRange.new(0, 3)
+		em.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, s.trailWidth * 0.7),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		em.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		em.Parent = box
+		em:Emit(math.clamp(math.floor(travel * 2), 10, 200))
+		Debris:AddItem(box, s.trailTime * 1.5 + 0.5)
+	end
+end
+
+local function soruLocal(dir, distance)
+	local s = cfg.soru
+	local char, _, root = getChar()
+	if not root then
+		return
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { char }
+
+	local origin = root.Position
+	local hit = workspace:Raycast(origin, dir * distance, params)
+	local travel = hit and math.max(hit.Distance - 3, 0) or distance
+	local target = origin + dir * travel
+
+	-- O personagem sempre olha na horizontal (evita girar de cabeça pra baixo)
+	local flat = Vector3.new(dir.X, 0, dir.Z)
+	if flat.Magnitude > 0.01 then
+		root.CFrame = CFrame.lookAt(target, target + flat)
+	else
+		root.CFrame = CFrame.new(target) * (root.CFrame - root.CFrame.Position)
+	end
+
+	-- Soru aéreo contínuo: zera a queda e flutua um instante, sem precisar tocar no chão
+	if s.air then
+		s.airUntil = os.clock() + s.airHover
+		local v = root.AssemblyLinearVelocity
+		root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
+	end
+
+	if s.trail and travel > 1 then
+		soruEffects(origin, target, dir, travel)
+	end
+	if s.sound and SORU_SOUND_ID ~= "" then
+		local snd = Instance.new("Sound")
+		snd.SoundId = SORU_SOUND_ID
+		snd.Parent = root
+		snd:Play()
+		Debris:AddItem(snd, 3)
+	end
+end
+
+-- Pronto para usar? (Instant Soru ignora o cooldown)
+local function soruReady(force)
+	local s = cfg.soru
+	return force or (s.enabled and (s.instant or os.clock() >= s.readyAt))
+end
+
+local function doSoru(force)
+	local s = cfg.soru
+	if not soruReady(force) then
+		return
+	end
+	local dir = getSoruDirection()
+	if not dir then
+		return
+	end
+	if not s.instant then
+		s.readyAt = os.clock() + s.cooldown
+	end
+	soruLocal(dir, s.distance)
+end
+
+-- Alvo mais próximo que está dentro da tela (campo de visão da câmera)
+local function nearestVisibleTarget()
+	local s = cfg.soru
+	local camera = workspace.CurrentCamera
+	local _, _, myRoot = getChar()
+	if not myRoot then
+		return nil
+	end
+	local best, bestDist
+	for _, e in ipairs(collectTargets(s.targetPlayers, s.targetNpc)) do
+		local _, onScreen = camera:WorldToViewportPoint(e.part.Position)
+		if onScreen then
+			local d = (e.part.Position - myRoot.Position).Magnitude
+			if not bestDist or d < bestDist then
+				best, bestDist = e, d
+			end
+		end
+	end
+	return best, bestDist
+end
+
+local function doSoruTarget()
+	local s = cfg.soru
+	if not soruReady(false) then
+		return
+	end
+	local e, dist = nearestVisibleTarget()
+	if not e then
+		notify("Nenhum alvo na tela")
+		return
+	end
+	local _, _, root = getChar()
+	if not root then
+		return
+	end
+	local d = e.part.Position - root.Position
+	if d.Magnitude < 0.01 then
+		return
+	end
+	if not s.instant then
+		s.readyAt = os.clock() + s.cooldown
+	end
+	-- vai até perto do alvo (para ~4 studs antes), no máximo a distância do Soru
+	soruLocal(d.Unit, math.min(s.distance, math.max(dist - 4, 1)))
+end
+
+----------------------------------------------------------------------
+-- FLY / NOCLIP / PULO INFINITO
+----------------------------------------------------------------------
+local flyState = { enabled = false, lv = nil, att = nil, vel = Vector3.zero }
+local flyToggle
+
+local function stopFly()
+	if flyState.lv then
+		flyState.lv:Destroy()
+		flyState.lv = nil
+	end
+	if flyState.att then
+		flyState.att:Destroy()
+		flyState.att = nil
+	end
+	local _, hum = getChar()
+	if hum then
+		hum.PlatformStand = false
+		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end
+end
+
+local function startFly()
+	local _, hum, root = getChar()
+	if not root then
+		return false
+	end
+	stopFly()
+	local att = Instance.new("Attachment")
+	att.Parent = root
+	local lv = Instance.new("LinearVelocity")
+	lv.Attachment0 = att
+	lv.MaxForce = math.huge
+	lv.RelativeTo = Enum.ActuatorRelativeTo.World
+	lv.VectorVelocity = Vector3.zero
+	lv.Parent = root
+	flyState.att, flyState.lv = att, lv
+	flyState.vel = Vector3.zero
+	hum.PlatformStand = true
+	return true
+end
+
+RunService.Heartbeat:Connect(function(dt)
+	-- FLY suave ---------------------------------------------------------
+	if flyState.enabled then
+		local _, hum, root = getChar()
+		if not root or not flyState.lv or not flyState.lv.Parent then
+			flyState.enabled = false
+			stopFly()
+			if flyToggle then
+				flyToggle.Set(false, true)
+			end
+		else
+			local cam = workspace.CurrentCamera.CFrame
+			local look, right = cam.LookVector, cam.RightVector
+
+			-- Modo "Teclas": W/S/A/D andam na horizontal; subir/descer só com Espaço/Ctrl
+			if cfg.fly.vertical == "Teclas" then
+				look = Vector3.new(look.X, 0, look.Z)
+				look = look.Magnitude > 0.01 and look.Unit or Vector3.zero
+			end
+			right = Vector3.new(right.X, 0, right.Z)
+			right = right.Magnitude > 0.01 and right.Unit or Vector3.zero
+
+			local move = Vector3.zero
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += look end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= look end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += right end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= right end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.yAxis end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.yAxis end
+			if move.Magnitude < 0.01 and hum.MoveDirection.Magnitude > 0.1 then
+				move = hum.MoveDirection -- celular / controle
+			end
+
+			local goal = move.Magnitude > 0.01 and move.Unit * cfg.fly.speed or Vector3.zero
+
+			-- suavização: quanto maior "smooth", mais devagar acelera/freia
+			local rate = 25 - 0.22 * cfg.fly.smooth
+			local alpha = cfg.fly.smooth <= 0 and 1 or (1 - math.exp(-rate * dt))
+			flyState.vel = (flyState.vel or Vector3.zero):Lerp(goal, alpha)
+			flyState.lv.VectorVelocity = flyState.vel
+
+			-- o personagem vira suavemente para onde a câmera olha (sem inclinar)
+			local flat = Vector3.new(cam.LookVector.X, 0, cam.LookVector.Z)
+			if flat.Magnitude > 0.01 then
+				local pos = root.Position
+				root.CFrame = root.CFrame:Lerp(CFrame.lookAt(pos, pos + flat), 0.25)
+			end
+		end
+	end
+
+	-- Soru aéreo: segura a queda por alguns instantes depois de cada Soru
+	if cfg.soru.air and os.clock() < cfg.soru.airUntil then
+		local _, _, root = getChar()
+		if root then
+			local v = root.AssemblyLinearVelocity
+			root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
+		end
+	end
+end)
+
+-- PULO INFINITO ---------------------------------------------------------
+UserInputService.JumpRequest:Connect(function()
+	if not cfg.fly.infJump or not hasPerm("Fly") or flyState.enabled then
+		return
+	end
+	if os.clock() - cfg.fly.lastJump < 0.1 then
+		return
+	end
+	local _, hum = getChar()
+	if hum then
+		cfg.fly.lastJump = os.clock()
+		hum:ChangeState(Enum.HumanoidStateType.Jumping)
+	end
+end)
+
+RunService.Stepped:Connect(function()
+	if not cfg.noclip then
+		return
+	end
+	local char = player.Character
+	if not char then
+		return
+	end
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.CanCollide = false
+		end
+	end
+end)
+
+----------------------------------------------------------------------
+-- ESP
+----------------------------------------------------------------------
+local esp = {
+	on = false,
+	names = false,
+	dist = false,
+	health = false,
+	maxDist = 4000, -- em studs (o slider vai até 20000) -- aumentado: 1000 cortava jogadores mais longe em mapas grandes
+	style = "Contorno", -- "Contorno", "Preenchido" ou "Nenhum"
+	ignoreTeam = true,
+	box = false, -- Box ESP (contorno do corpo)
+	nameMode = "Apelido", -- "Apelido" (DisplayName) ou "Usuário"
+	unit = "Metros", -- "Metros" ou "Studs"
+	textSize = 13,
+	tracers = false, -- linhas da tela até os jogadores
+	tracerGlobal = true, -- true = linhas para TODOS, ignorando a distância máxima
+	tracerOrigin = "Baixo", -- "Baixo", "Centro" ou "Mouse"
+	tracerThick = 1.5,
+}
+local espObjects = {}
+local tracerLines = {}
+
+-- 1 stud = 0,28 metro
+local function fmtDist(studs)
+	if esp.unit == "Metros" then
+		return string.format("%.1f m", studs * 0.28)
+	end
+	return math.floor(studs) .. " studs"
+end
+
+local function clearEsp(p)
+	local o = espObjects[p]
+	if o then
+		for _, inst in pairs(o) do
+			if typeof(inst) == "Instance" then
+				inst:Destroy()
+			end
+		end
+		espObjects[p] = nil
+	end
+end
+
+local function clearTracer(p)
+	local line = tracerLines[p]
+	if line then
+		line:Destroy()
+		tracerLines[p] = nil
+	end
+end
+
+local function buildEsp(char)
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return nil
+	end
+	local o = { char = char }
+	o.hl = new("Highlight", {
+		Adornee = char,
+		OutlineColor = Color3.new(1, 1, 1),
+		DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+	}, gui)
+	-- Box ESP: contorno do corpo inteiro (aparece através das paredes)
+	o.sel = new("SelectionBox", {
+		Adornee = char,
+		LineThickness = 0.04,
+		SurfaceTransparency = 1,
+	}, gui)
+	o.bb = new("BillboardGui", {
+		Adornee = root,
+		Size = UDim2.fromOffset(200, 70),
+		StudsOffset = Vector3.new(0, 3.8, 0),
+		AlwaysOnTop = true,
+	}, gui)
+	o.label = new("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		TextColor3 = Color3.new(1, 1, 1),
+		TextStrokeTransparency = 0.4,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+	}, o.bb)
+	return o
+end
+
+local lastEsp = 0
+RunService.Heartbeat:Connect(function()
+	if os.clock() - lastEsp < 0.1 then
+		return
+	end
+	lastEsp = os.clock()
+
+	if not esp.on then
+		for p in pairs(espObjects) do
+			clearEsp(p)
+		end
+		return
+	end
+
+	local _, _, myRoot = getChar()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player then
+			local char = p.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			local sameTeam = esp.ignoreTeam and p.Team ~= nil and p.Team == player.Team
+			if not (hum and root and hum.Health > 0) or sameTeam then
+				clearEsp(p)
+			else
+				local o = espObjects[p]
+				if not o or o.char ~= char then
+					clearEsp(p)
+					o = buildEsp(char)
+					espObjects[p] = o
+				end
+				if o then
+					local dist = myRoot and (root.Position - myRoot.Position).Magnitude or 0
+					local inRange = dist <= esp.maxDist
+					local isLocked = cfg.aimbot and p == currentLockPlayer
+					o.hl.Enabled = inRange and (esp.style ~= "Nenhum" or isLocked)
+					o.hl.FillColor = isLocked and Color3.fromRGB(255, 60, 60) or ACCENT
+					o.hl.FillTransparency = (esp.style == "Preenchido" or isLocked) and 0.5 or 1
+					o.sel.Visible = inRange and (esp.box or isLocked)
+					o.sel.Color3 = isLocked and Color3.fromRGB(255, 60, 60) or ACCENT
+					o.sel.LineThickness = isLocked and 0.08 or 0.04
+					o.bb.Enabled = inRange and (esp.names or esp.dist or esp.health)
+					o.label.TextSize = esp.textSize
+					local lines = {}
+					if esp.names then
+						table.insert(lines, esp.nameMode == "Apelido" and p.DisplayName or p.Name)
+					end
+					if esp.dist then
+						table.insert(lines, fmtDist(dist))
+					end
+					if esp.health then
+						table.insert(lines, math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth) .. " HP")
+					end
+					if isLocked then
+						table.insert(lines, 1, "🎯 ALVO")
+					end
+					o.label.Text = table.concat(lines, "\n")
+				end
+			end
+		end
+	end
+end)
+
+-- TRACERS: uma linha da tela até CADA jogador, atualizada todo frame ------
+RunService.RenderStepped:Connect(function()
+	if not (esp.on and esp.tracers) then
+		for p in pairs(tracerLines) do
+			clearTracer(p)
+		end
+		return
+	end
+
+	local camera = workspace.CurrentCamera
+	local screen = camera.ViewportSize
+	local origin
+	if esp.tracerOrigin == "Centro" then
+		origin = screen / 2
+	elseif esp.tracerOrigin == "Mouse" then
+		origin = UserInputService:GetMouseLocation()
+	else
+		origin = Vector2.new(screen.X / 2, screen.Y)
+	end
+
+	local _, _, myRoot = getChar()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player then
+			local char = p.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			local sameTeam = esp.ignoreTeam and p.Team ~= nil and p.Team == player.Team
+			local show = hum ~= nil and root ~= nil and hum.Health > 0 and not sameTeam
+			if show and not esp.tracerGlobal then
+				local dist = myRoot and (root.Position - myRoot.Position).Magnitude or 0
+				show = dist <= esp.maxDist
+			end
+
+			if not show then
+				clearTracer(p)
+			else
+				local line = tracerLines[p]
+				if not line then
+					line = new("Frame", {
+						AnchorPoint = Vector2.new(0.5, 0.5),
+						BorderSizePixel = 0,
+						ZIndex = 0, -- fica atrás do painel
+					}, gui)
+					tracerLines[p] = line
+				end
+
+				local v = camera:WorldToViewportPoint(root.Position)
+				local pt = Vector2.new(v.X, v.Y)
+				if v.Z < 0 then
+					-- jogador atrás da câmera: espelha para a linha apontar para o lado certo
+					pt = origin + (origin - pt)
+				end
+				pt = Vector2.new(math.clamp(pt.X, 0, screen.X), math.clamp(pt.Y, 0, screen.Y))
+
+				local d = pt - origin
+				local len = d.Magnitude
+				line.Visible = len > 1
+				line.Size = UDim2.fromOffset(len, esp.tracerThick)
+				line.Position = UDim2.fromOffset((origin.X + pt.X) / 2, (origin.Y + pt.Y) / 2)
+				line.Rotation = math.deg(math.atan2(d.Y, d.X))
+				line.BackgroundColor3 = ACCENT
+			end
+		end
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+	clearEsp(p)
+	clearTracer(p)
+end)
+
+----------------------------------------------------------------------
+-- TECLAS
+----------------------------------------------------------------------
+local recorder = { on = false, events = {}, downs = {}, target = 1 }
+local lastDashTap = 0
+
+local function onKeyDown(k)
+	if k == cfg.soru.key then
+		doSoru()
+	elseif k == cfg.soru.targetKey then
+		doSoruTarget()
+	elseif k == cfg.glideA.key then
+		triggerGlideA()
+	elseif k == cfg.glideB.key then
+		triggerGlideB()
+	elseif k == cfg.dash.key then
+		local now = os.clock()
+		if now - lastDashTap < 0.35 then
+			doDashImpulse() -- duplo toque: empurrão físico
+		else
+			doDash() -- toque simples: dash normal (CFrame)
+		end
+		lastDashTap = now
+	elseif k == Enum.KeyCode.G then
+		jumpBoost()
+	elseif k == cfg.fly.key and flyToggle then
+		flyToggle.Set(not flyToggle.Get())
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed or recorder.on or input.UserInputType ~= Enum.UserInputType.Keyboard then
+		return
+	end
+	onKeyDown(input.KeyCode)
+end)
+
+----------------------------------------------------------------------
+-- MOUSE, TECLAS VIRTUAIS E TP PLAYER
+----------------------------------------------------------------------
+-- IMPORTANTE: o Roblox não deixa nenhum script gerar teclas reais do teclado.
+-- "Enviar tecla" funciona assim: o painel dispara o BindableEvent
+-- ReplicatedStorage.SukyWareKey e também executa as funções do próprio painel
+-- (Soru, Glide, Fly...). Para a tecla R (ou outra) do SEU jogo, o script da
+-- habilidade precisa escutar o evento:
+--
+--   local ev = game:GetService("ReplicatedStorage"):WaitForChild("SukyWareKey")
+--   ev.Event:Connect(function(input, isDown, mousePos)
+--       if input == Enum.KeyCode.R and isDown then minhaHabilidadeR(mousePos) end
+--   end)
+local keyEvent = Instance.new("BindableEvent")
+keyEvent.Name = "SukyWareKey"
+keyEvent.Parent = game:GetService("ReplicatedStorage")
+
+local function getMouseWorld(maxDist)
+	local camera = workspace.CurrentCamera
+	local m = UserInputService:GetMouseLocation()
+	local ray = camera:ViewportPointToRay(m.X, m.Y)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { player.Character }
+	local hit = workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
+	if hit then
+		return hit.Position, true
+	end
+	return ray.Origin + ray.Direction * (maxDist or 2000), false
+end
+
+local mouseCache, mouseCacheAt = Vector3.zero, 0
+local function sendInput(input, down)
+	if os.clock() - mouseCacheAt > 0.01 then
+		mouseCache = getMouseWorld()
+		mouseCacheAt = os.clock()
+	end
+	keyEvent:Fire(input, down, mouseCache)
+	if down and typeof(input) == "EnumItem" and input.EnumType == Enum.KeyCode then
+		onKeyDown(input)
+	end
+end
+hooks.SendInput = sendInput
+
+local function teleportToMouse(maxDist)
+	local _, _, root = getChar()
+	if not root then
+		return
+	end
+	local pos, hit = getMouseWorld(maxDist)
+	local d = pos - root.Position
+	if d.Magnitude < 1 then
+		return
+	end
+	if d.Magnitude > maxDist then
+		d = d.Unit * maxDist
+	end
+	local target = root.Position + d
+	if hit then
+		target += Vector3.new(0, 3, 0)
+	end
+	root.CFrame = CFrame.new(target) * (root.CFrame - root.CFrame.Position)
+end
+
+-- TP PLAYER ------------------------------------------------------------
+-- Teleporta você para o JOGADOR MAIS PRÓXIMO (sem escolher ninguém na lista).
+-- Um toque/tecla = um TP, não fica repetindo sozinho.
+local TP_MOUSE_MAX_DIST = 80 -- usado só pelo passo de macro "TP até o mouse"
+
+local tpPlayer = {
+	enabled = false,
+	key = Enum.KeyCode.T,
+	offset = 5, -- distância (studs) atrás do alvo onde você aparece
+}
+
+-- Devolve o HumanoidRootPart do player vivo mais perto de você (ou nil)
+local function nearestPlayerRoot()
+	local _, _, myRoot = getChar()
+	if not myRoot then
+		return nil
+	end
+	local best, bestDist
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player then
+			local char = p.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if hum and root and hum.Health > 0 then
+				local d = (root.Position - myRoot.Position).Magnitude
+				if not bestDist or d < bestDist then
+					best, bestDist = root, d
+				end
+			end
+		end
+	end
+	return best
+end
+
+local function doTpToPlayer()
+	if not hasPerm("Soru") then
+		return
+	end
+	local _, _, myRoot = getChar()
+	local theirRoot = nearestPlayerRoot()
+	if not myRoot then
+		return
+	end
+	if not theirRoot then
+		notify("TP Player: nenhum jogador por perto")
+		return
+	end
+	local back = theirRoot.CFrame.LookVector * -1
+	local pos = theirRoot.Position + back * tpPlayer.offset
+	myRoot.CFrame = CFrame.lookAt(pos, theirRoot.Position)
+end
+
+local function tpPlayerInput(input)
+	if not tpPlayer.enabled or input.KeyCode ~= tpPlayer.key or not hasPerm("Soru") then
+		return
+	end
+	doTpToPlayer()
+end
+
+-- MACROS --------------------------------------------------------------
+local MACRO_COUNT = 5
+local macroKeys = { Enum.KeyCode.Z, Enum.KeyCode.X, Enum.KeyCode.C, Enum.KeyCode.V, Enum.KeyCode.B }
+local macros = {}
+for i = 1, MACRO_COUNT do
+	macros[i] = {
+		enabled = false,
+		key = macroKeys[i],
+		mode = "Segurar", -- "Segurar", "Alternar" ou "Uma vez"
+		loops = 0, -- 0 = infinito
+		cycleDelay = 0, -- ms entre ciclos
+		speed = 100, -- % (200 = o dobro da velocidade)
+		jitter = 0, -- variação aleatória em ms (+/-)
+		steps = {},
+		running = false,
+		token = 0,
+	}
+end
+
+local ACTIONS = {
+	{ name = "Tecla", type = "Tecla" },
+	{ name = "Segurar tecla", type = "Segurar" },
+	{ name = "Soltar tecla", type = "Soltar" },
+	{ name = "Clique esquerdo", type = "Clique", btn = 1 },
+	{ name = "Clique direito", type = "Clique", btn = 2 },
+	{ name = "Esperar", type = "Esperar" },
+	{ name = "Spam de tecla", type = "Spam" },
+	{ name = "Soru", type = "Soru" },
+	{ name = "TP até o mouse", type = "TP mouse" },
+}
+
+local function describeStep(i, st)
+	local t = st.type
+	local hold, delay = st.hold or 0, st.delay or 0
+	if t == "Tecla" then
+		return string.format("%d. Tecla %s  (segura %gms, espera %gms)", i, st.key.Name, hold, delay)
+	elseif t == "Segurar" then
+		return string.format("%d. Segurar %s  (espera %gms)", i, st.key.Name, delay)
+	elseif t == "Soltar" then
+		return string.format("%d. Soltar %s  (espera %gms)", i, st.key.Name, delay)
+	elseif t == "Clique" then
+		return string.format("%d. Clique %s  (segura %gms, espera %gms)", i, st.btn == 2 and "dir." or "esq.", hold, delay)
+	elseif t == "Esperar" then
+		return string.format("%d. Esperar %gms", i, delay)
+	elseif t == "Spam" then
+		return string.format("%d. Spam %s x%g  (segura %gms, espera %gms)", i, st.key.Name, st.count or 1, hold, delay)
+	elseif t == "Soru" then
+		return string.format("%d. Soru  (espera %gms)", i, delay)
+	elseif t == "TP mouse" then
+		return string.format("%d. TP até o mouse  (espera %gms)", i, delay)
+	end
+	return i .. ". " .. tostring(t)
+end
+
+local function runMacro(m, tok, cycles)
+	local steps = table.clone(m.steps)
+	if #steps == 0 then
+		m.running = false
+		notify("Esse macro não tem passos")
+		return
+	end
+	local debt = 0
+	local held = {}
+
+	local function alive()
+		return m.running and m.token == tok
+	end
+
+	local function scaled(v)
+		v = v * 100 / math.max(m.speed, 1)
+		if m.jitter > 0 then
+			v += (math.random() * 2 - 1) * m.jitter
+		end
+		return math.max(v, 0)
+	end
+
+	-- Espera em ms. O Roblox só "acorda" a cada frame (~16ms a 60 FPS), então
+	-- tempos menores são somados e compensados para a média ficar certa.
+	local function sleep(v)
+		debt += scaled(v)
+		if debt >= 8 then
+			local target = os.clock() + debt / 1000
+			repeat
+				RunService.Heartbeat:Wait()
+			until os.clock() >= target or not alive()
+			debt = -math.max(os.clock() - target, 0) * 1000
+		end
+	end
+
+	local function press(input, down)
+		sendInput(input, down)
+		held[input] = down or nil
+	end
+
+	local function tap(input, st)
+		press(input, true)
+		sleep(st.hold or 0)
+		press(input, false)
+		sleep(st.delay or 0)
+	end
+
+	local function doStep(st)
+		local t = st.type
+		if t == "Tecla" then
+			tap(st.key, st)
+		elseif t == "Segurar" then
+			press(st.key, true)
+			sleep(st.delay or 0)
+		elseif t == "Soltar" then
+			press(st.key, false)
+			sleep(st.delay or 0)
+		elseif t == "Clique" then
+			tap(st.btn == 2 and Enum.UserInputType.MouseButton2 or Enum.UserInputType.MouseButton1, st)
+		elseif t == "Esperar" then
+			sleep(st.delay or 0)
+		elseif t == "Spam" then
+			for _ = 1, st.count or 1 do
+				if not alive() then
+					break
+				end
+				tap(st.key, st)
+			end
+		elseif t == "Soru" then
+			doSoru(true)
+			sleep(st.delay or 0)
+		elseif t == "TP mouse" then
+			teleportToMouse(TP_MOUSE_MAX_DIST)
+			sleep(st.delay or 0)
+		end
+	end
+
+	local done = 0
+	while alive() do
+		for _, st in ipairs(steps) do
+			if not alive() then
+				break
+			end
+			doStep(st)
+		end
+		done += 1
+		if cycles > 0 and done >= cycles then
+			break
+		end
+		if not alive() then
+			break
+		end
+		sleep(m.cycleDelay)
+		RunService.Heartbeat:Wait() -- nunca trava o jogo, mesmo com todos os tempos em 0
+	end
+
+	for input in pairs(held) do
+		sendInput(input, false) -- solta qualquer tecla que ficou presa
+	end
+	if m.token == tok then
+		m.running = false
+	end
+end
+
+local function startMacro(m, cycles)
+	if m.running or not hasPerm("Macro") then
+		return
+	end
+	m.running = true
+	m.token += 1
+	task.spawn(runMacro, m, m.token, cycles)
+end
+
+local function stopMacro(m)
+	m.running = false
+end
+
+-- GRAVAÇÃO ------------------------------------------------------------
+local function makeTap(input, hold, delay)
+	if typeof(input) == "EnumItem" and input.EnumType == Enum.UserInputType then
+		return { type = "Clique", btn = input == Enum.UserInputType.MouseButton2 and 2 or 1, hold = hold, delay = delay }
+	end
+	return { type = "Tecla", key = input, hold = hold, delay = delay }
+end
+
+local function buildStepsFromEvents(events)
+	-- 1) eventos -> Segurar / Soltar / Esperar
+	local raw = {}
+	local last = events[1] and events[1].t or 0
+	for _, e in ipairs(events) do
+		local gap = math.floor((e.t - last) * 1000 + 0.5)
+		if gap > 0 then
+			table.insert(raw, { type = "Esperar", delay = gap })
+		end
+		last = e.t
+		table.insert(raw, { type = e.down and "Segurar" or "Soltar", key = e.input, delay = 0 })
+	end
+
+	-- 2) Segurar K + Esperar + Soltar K vira um toque (Tecla/Clique)
+	local merged, i = {}, 1
+	while i <= #raw do
+		local a, b, c = raw[i], raw[i + 1], raw[i + 2]
+		if a.type == "Segurar" and b and b.type == "Esperar" and c and c.type == "Soltar" and c.key == a.key then
+			table.insert(merged, makeTap(a.key, b.delay, 0))
+			i += 3
+		elseif a.type == "Segurar" and b and b.type == "Soltar" and b.key == a.key then
+			table.insert(merged, makeTap(a.key, 0, 0))
+			i += 2
+		else
+			table.insert(merged, a)
+			i += 1
+		end
+	end
+
+	-- 3) Esperar depois de um passo vira o "esperar após" dele
+	local out = {}
+	for _, st in ipairs(merged) do
+		local prev = out[#out]
+		if st.type == "Esperar" and prev and prev.type ~= "Esperar" then
+			prev.delay = (prev.delay or 0) + st.delay
+		else
+			table.insert(out, st)
+		end
+	end
+	return out
+end
+
+local function inputKey(input)
+	return input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode or input.UserInputType
+end
+
+local function isRecordable(input)
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		local k = input.KeyCode
+		if k == toggleKey or k == tpPlayer.key then
+			return false
+		end
+		for _, m in ipairs(macros) do
+			if m.key == k then
+				return false
+			end
+		end
+		return true
+	end
+	return input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.MouseButton2
+end
+
+-- ENTRADAS REAIS (ativar macros, TP Player e gravar) ---------------------
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+	if recorder.on then
+		if isRecordable(input) then
+			local key = inputKey(input)
+			recorder.downs[key] = true
+			table.insert(recorder.events, { t = os.clock(), down = true, input = key })
+		end
+		return
+	end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then
+		return
+	end
+	tpPlayerInput(input)
+	for _, m in ipairs(macros) do
+		if m.enabled and m.key == input.KeyCode then
+			if m.mode == "Alternar" then
+				if m.running then
+					stopMacro(m)
+					notify("Macro desligado")
+				else
+					startMacro(m, m.loops)
+					notify("Macro ligado")
+				end
+			else
+				startMacro(m, m.mode == "Uma vez" and math.max(1, m.loops) or m.loops)
+			end
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if recorder.on then
+		local key = inputKey(input)
+		if recorder.downs[key] then
+			recorder.downs[key] = nil
+			table.insert(recorder.events, { t = os.clock(), down = false, input = key })
+		end
+		return
+	end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then
+		return
+	end
+	for _, m in ipairs(macros) do
+		if m.mode == "Segurar" and m.key == input.KeyCode then
+			stopMacro(m)
+		end
+	end
+end)
+
+player.CharacterAdded:Connect(function()
+	task.wait(0.5)
+	speedBackup = nil
+	if flyState.enabled then
+		flyState.enabled = false
+		stopFly()
+		if flyToggle then
+			flyToggle.Set(false, true)
+		end
+	end
+	if cfg.speedOn then
+		applySpeed()
+	end
+end)
+
+----------------------------------------------------------------------
+-- SAVE / LOAD (JSON)
+-- Usa writefile/readfile/isfile (só existem em executores). Se não
+-- existirem, o painel avisa e o resto continua funcionando.
+----------------------------------------------------------------------
+local HttpService = game:GetService("HttpService")
+local SAVE_FOLDER, SAVE_FILE = "SukyWare", "SukyWare/config.json"
+local fsOK = typeof(writefile) == "function" and typeof(readfile) == "function" and typeof(isfile) == "function"
+local autoLoadOn = false
+local autoToggle
+
+local function c3(c)
+	return { c.R, c.G, c.B }
+end
+
+local function readSave()
+	if not fsOK or not isfile(SAVE_FILE) then
+		return nil
+	end
+	local ok, data = pcall(function()
+		return HttpService:JSONDecode(readfile(SAVE_FILE))
+	end)
+	return (ok and type(data) == "table") and data or nil
+end
+
+local function writeSave(data)
+	if not fsOK then
+		notify("Seu executor não suporta writefile/readfile")
+		return false
+	end
+	local ok = pcall(function()
+		if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(SAVE_FOLDER) then
+			makefolder(SAVE_FOLDER)
+		end
+		writefile(SAVE_FILE, HttpService:JSONEncode(data))
+	end)
+	return ok
+end
+
+local function saveConfig()
+	local values = {}
+	for _, key in ipairs(saveOrder) do
+		local e = saveRegistry[key]
+		local v = e.w.Get()
+		if e.kind == "keybind" then
+			v = v.Name
+		end
+		values[key] = v
+	end
+	local data = {
+		version = 1,
+		autoLoad = autoLoadOn,
+		accent = c3(ACCENT),
+		trailColor = c3(cfg.soru.trailColor),
+		values = values,
+	}
+	notify(writeSave(data) and "Config salva" or "Falha ao salvar config")
+end
+
+local function loadConfig(manual)
+	local data = readSave()
+	if not data then
+		if manual then
+			notify("Nenhuma config salva")
+		end
+		return false
+	end
+	if data.accent then
+		setAccent(Color3.new(unpack(data.accent)))
+	end
+	if data.trailColor then
+		cfg.soru.trailColor = Color3.new(unpack(data.trailColor))
+	end
+	for _, key in ipairs(saveOrder) do
+		local e = saveRegistry[key]
+		local v = data.values and data.values[key]
+		if v ~= nil then
+			pcall(function()
+				if e.kind == "keybind" then
+					e.w.Set(Enum.KeyCode[v], true)
+				elseif e.kind == "dropdown" or e.kind == "input" then
+					e.w.Set(v, true)
+				else
+					e.w.Set(v) -- toggle/slider já disparam o callback
+				end
+			end)
+		end
+	end
+	notify("Config carregada")
+	return true
+end
+
+----------------------------------------------------------------------
+-- CONTEÚDO
+----------------------------------------------------------------------
+
+-- PVP -----------------------------------------------------------------
+do
+	local left, right = createTab("PVP")
+	----------------------------------------------------------------------
+	--- CATEGORIA: PVP ---
+	--- (a lógica de verdade desta categoria mora lá em cima, na seção "LÓGICA" --
+	---  isto aqui embaixo é só a INTERFACE: os botões/sliders que ligam nela) ---
+	--- ADICIONAR OPÇÃO NOVA A "PVP" -> cole o UI.xxx(...) logo acima do
+	---  marcador "criar nova opção abaixo" no fim deste bloco ---
+	----------------------------------------------------------------------
+
+	UI.section(left, "Aimbot")
+	UI.toggle(left, "Aimbot (botão direito)", false, function(v)
+		cfg.aimbot = v
+	end, "RButton", "Aimbot")
+	UI.playerList(left, function(selectedPlayer)
+		cfg.lockedTarget = selectedPlayer
+	end)
+
+	UI.section(left, "Silent Aim")
+	UI.toggle(left, "Player Silent Aim", false, function(v)
+		cfg.silentPlayers = v
+	end, nil, "Aimbot")
+	UI.toggle(left, "NPC Silent Aim", false, function(v)
+		cfg.silentNpc = v
+	end, nil, "Aimbot")
+	UI.toggle(left, "Mostrar círculo de FOV", false, function(v)
+		cfg.showFov = v
+	end)
+	UI.slider(left, "Raio do FOV (px)", 20, 600, cfg.fovSize / 2, 5, function(v)
+		cfg.fovSize = v * 2
+	end)
+	UI.dropdown(left, "Prioridade", { "Mais próximo", "Menor vida", "Mais perto da mira" }, cfg.priority, function(v)
+		cfg.priority = v
+	end)
+	UI.dropdown(left, "Modo de FOV", { "V1", "V2" }, cfg.fovMode, function(v)
+		cfg.fovMode = v
+	end)
+	UI.dropdown(left, "Ativação do Aimbot", { "Automático (ESP)", "Segurar botão direito" }, cfg.aimActivation, function(v)
+		cfg.aimActivation = v
+	end)
+	UI.dropdown(left, "Alvo do Aimbot", { "Players", "NPCs", "Both" }, cfg.aimTargetMode, function(v)
+		cfg.aimTargetMode = v
+	end)
+	UI.slider(left, "Força da mira (%)", 5, 100, cfg.smooth * 100, 1, function(v)
+		cfg.smooth = v / 100
+	end)
+	UI.dropdown(left, "Alvo da mira", { "Cabeça", "Tronco" }, cfg.aimPart, function(v)
+		cfg.aimPart = v
+	end)
+	UI.toggle(left, "Checar parede", true, function(v)
+		cfg.wallCheck = v
+	end)
+	UI.toggle(left, "Checar time", true, function(v)
+		cfg.teamCheck = v
+	end)
+
+	UI.section(right, "Velocidade")
+	UI.toggle(right, "Speed Hack", false, function(v)
+		cfg.speedOn = v
+		applySpeed()
+	end, nil, "Speed")
+	UI.slider(right, "WalkSpeed", 16, 200, cfg.walkSpeed, 1, function(v)
+		cfg.walkSpeed = v
+		if cfg.speedOn then
+			applySpeed()
+		end
+	end)
+
+	UI.section(right, "Deslize")
+	UI.toggle(right, "Deslize ativado", false, function(v)
+		cfg.glideA.enabled = v
+	end, nil, "Glide")
+	UI.keybind(right, "Tecla do deslize", cfg.glideA.key, function(k)
+		cfg.glideA.key = k
+	end)
+	UI.slider(right, "Velocidade do deslize", 50, 1000, cfg.glideA.speed, 10, function(v)
+		cfg.glideA.speed = v
+	end)
+	UI.slider(right, "Tempo do deslize (cs)", 1, 100, cfg.glideA.time, 1, function(v)
+		cfg.glideA.time = v
+	end)
+	local jumpInput
+	jumpInput = UI.input(right, "Força do pulo (G)", cfg.jumpForce, function(text)
+		cfg.jumpForce = num(text, 0, 400, cfg.jumpForce)
+		jumpInput.Set(cfg.jumpForce)
+	end)
+
+	UI.section(right, "Extra")
+	UI.toggle(right, "Skill rápida", false, function(v)
+		hooks.FastSkill = v
+	end, nil, "Combat")
+	--- CRIAR NOVA OPÇÃO NA ABA "PVP" ABAIXO DESTA LINHA ---
+end
+
+-- SORU ----------------------------------------------------------------
+do
+	local left, right = createTab("Soru")
+	----------------------------------------------------------------------
+	--- CATEGORIA: Soru ---
+	--- (a lógica de verdade desta categoria mora lá em cima, na seção "LÓGICA" --
+	---  isto aqui embaixo é só a INTERFACE: os botões/sliders que ligam nela) ---
+	--- ADICIONAR OPÇÃO NOVA A "Soru" -> cole o UI.xxx(...) logo acima do
+	---  marcador "criar nova opção abaixo" no fim deste bloco ---
+	----------------------------------------------------------------------
+
+	UI.section(left, "Soru")
+	UI.toggle(left, "Soru ativado", false, function(v)
+		cfg.soru.enabled = v
+	end, nil, "Soru")
+	UI.keybind(left, "Tecla do Soru", cfg.soru.key, function(k)
+		cfg.soru.key = k
+	end)
+	UI.slider(left, "Distância", 10, 120, cfg.soru.distance, 1, function(v)
+		cfg.soru.distance = v
+	end)
+	UI.slider(left, "Cooldown (s)", 0, 10, cfg.soru.cooldown, 0.5, function(v)
+		cfg.soru.cooldown = v
+	end)
+	UI.toggle(left, "Instant Soru (sem cooldown)", cfg.soru.instant, function(v)
+		cfg.soru.instant = v
+		hooks.InstantSoru = v
+	end)
+
+	UI.section(left, "Direção")
+	UI.dropdown(left, "Direção", { "Câmera", "Movimento", "Mouse" }, cfg.soru.direction, function(v)
+		cfg.soru.direction = v
+	end)
+	UI.toggle(left, "Seguir altura da câmera (3D)", cfg.soru.pitch, function(v)
+		cfg.soru.pitch = v
+	end)
+
+	UI.section(left, "Soru aéreo")
+	UI.toggle(left, "Soru aéreo contínuo", cfg.soru.air, function(v)
+		cfg.soru.air = v
+		hooks.AirSoru = v
+	end)
+	UI.slider(left, "Flutuar no ar (s)", 0, 1, cfg.soru.airHover, 0.05, function(v)
+		cfg.soru.airHover = v
+	end)
+
+	UI.section(right, "Soru no alvo mais próximo")
+	UI.keybind(right, "Tecla do Soru no alvo", cfg.soru.targetKey, function(k)
+		cfg.soru.targetKey = k
+	end)
+	UI.toggle(right, "Mirar em jogadores", cfg.soru.targetPlayers, function(v)
+		cfg.soru.targetPlayers = v
+	end)
+	UI.toggle(right, "Mirar em NPCs", cfg.soru.targetNpc, function(v)
+		cfg.soru.targetNpc = v
+	end)
+
+	UI.section(right, "Rastro e efeitos")
+	UI.toggle(right, "Rastro", cfg.soru.trail, function(v)
+		cfg.soru.trail = v
+	end)
+	UI.dropdown(right, "Estilo do rastro", { "Linha", "Partículas", "Ambos" }, cfg.soru.trailMode, function(v)
+		cfg.soru.trailMode = v
+	end)
+	UI.colors(right, "Cor do rastro", {
+		Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(0, 200, 255),
+		Color3.fromRGB(56, 132, 255),
+		Color3.fromRGB(70, 200, 120),
+		Color3.fromRGB(255, 150, 60),
+		Color3.fromRGB(240, 70, 80),
+	}, function(color)
+		cfg.soru.trailColor = color
+	end, false)
+	UI.slider(right, "Largura do rastro", 0.5, 6, cfg.soru.trailWidth, 0.5, function(v)
+		cfg.soru.trailWidth = v
+	end)
+	UI.slider(right, "Duração do rastro (s)", 0.1, 2, cfg.soru.trailTime, 0.1, function(v)
+		cfg.soru.trailTime = v
+	end)
+	UI.toggle(right, "Som", cfg.soru.sound, function(v)
+		cfg.soru.sound = v
+	end)
+
+	UI.section(right, "TP Player (mais próximo)")
+	UI.toggle(right, "TP Player ativado", false, function(v)
+		tpPlayer.enabled = v
+	end, nil, "Soru")
+	UI.keybind(right, "Tecla do TP Player", tpPlayer.key, function(k)
+		tpPlayer.key = k
+	end)
+	UI.slider(right, "Distância atrás do alvo", 2, 30, tpPlayer.offset, 1, function(v)
+		tpPlayer.offset = v
+	end)
+	UI.button(right, "TP agora", doTpToPlayer)
+	--- CRIAR NOVA OPÇÃO NA ABA "Soru" ABAIXO DESTA LINHA ---
+end
+
+-- GLITCH -----------------------------------------------------------
+do
+	local left, right = createTab("Glitch")
+	----------------------------------------------------------------------
+	--- CATEGORIA: Glitch ---
+	--- (a lógica de verdade desta categoria mora lá em cima, na seção "LÓGICA" --
+	---  isto aqui embaixo é só a INTERFACE: os botões/sliders que ligam nela) ---
+	--- ADICIONAR OPÇÃO NOVA A "Glitch" -> cole o UI.xxx(...) logo acima do
+	---  marcador "criar nova opção abaixo" no fim deste bloco ---
+	----------------------------------------------------------------------
+
+	UI.section(left, "Glitch")
+	UI.toggle(left, "Glitch ativado", false, function(v)
+		cfg.glideB.enabled = v
+	end, nil, "Glide")
+	UI.slider(left, "Velocidade", 50, 1000, cfg.glideB.speed, 10, function(v)
+		cfg.glideB.speed = v
+	end)
+	UI.slider(left, "Duração (cs)", 1, 100, cfg.glideB.time, 1, function(v)
+		cfg.glideB.time = v
+	end)
+
+	UI.section(left, "Dash (CFrame)")
+	UI.toggle(left, "Dash ativado", false, function(v)
+		cfg.dash.enabled = v
+	end, nil, "Glide")
+	UI.slider(left, "Distância do dash", 5, 200, cfg.dash.distance, 1, function(v)
+		cfg.dash.distance = v
+	end)
+	UI.keybind(left, "Tecla do dash", cfg.dash.key, function(k)
+		cfg.dash.key = k
+	end)
+	UI.slider(left, "Força do impulso (duplo toque)", 30, 200, cfg.dash.impulseForce, 5, function(v)
+		cfg.dash.impulseForce = v
+	end)
+	UI.slider(left, "Duração do impulso (s)", 0.1, 0.6, cfg.dash.impulseTime, 0.05, function(v)
+		cfg.dash.impulseTime = v
+	end)
+
+	UI.section(right, "Opções")
+	UI.keybind(right, "Tecla", cfg.glideB.key, function(k)
+		cfg.glideB.key = k
+	end)
+	UI.toggle(right, "Manter altura", true, function(v)
+		cfg.glideB.keepHeight = v
+	end)
+	--- CRIAR NOVA OPÇÃO NA ABA "Glitch" ABAIXO DESTA LINHA ---
+end
+
+-- FLY -----------------------------------------------------------------
+do
+	local left, right = createTab("Fly")
+	----------------------------------------------------------------------
+	--- CATEGORIA: Fly ---
+	--- (a lógica de verdade desta categoria mora lá em cima, na seção "LÓGICA" --
+	---  isto aqui embaixo é só a INTERFACE: os botões/sliders que ligam nela) ---
+	--- ADICIONAR OPÇÃO NOVA A "Fly" -> cole o UI.xxx(...) logo acima do
+	---  marcador "criar nova opção abaixo" no fim deste bloco ---
+	----------------------------------------------------------------------
+
+	UI.section(left, "Voo")
+	flyToggle = UI.toggle(left, "Fly", false, function(v)
+		flyState.enabled = v
+		if v then
+			if not startFly() then
+				flyState.enabled = false
+				flyToggle.Set(false, true)
+			end
+		else
+			stopFly()
+		end
+	end, nil, "Fly")
+	UI.slider(left, "Velocidade de voo", 10, 200, cfg.fly.speed, 1, function(v)
+		cfg.fly.speed = v
+	end)
+	UI.slider(left, "Suavidade do voo", 0, 100, cfg.fly.smooth, 5, function(v)
+		cfg.fly.smooth = v
+	end)
+	UI.dropdown(left, "Controle vertical", { "Teclas", "Câmera" }, cfg.fly.vertical, function(v)
+		cfg.fly.vertical = v
+	end)
+
+	UI.section(left, "Tecla do Fly")
+	UI.keybind(left, "Tecla do Fly", cfg.fly.key, function(k)
+		cfg.fly.key = k
+	end)
+
+	UI.section(right, "Extras / Mobilidade")
+	UI.toggle(right, "Noclip", false, function(v)
+		cfg.noclip = v
+	end, nil, "Fly")
+	UI.toggle(right, "Pulo infinito", false, function(v)
+		cfg.fly.infJump = v
+	end, nil, "Fly")
+	--- CRIAR NOVA OPÇÃO NA ABA "Fly" ABAIXO DESTA LINHA ---
+end
+
+-- MACRO (fora do Save/Load) ------------------------------------------
+do
+	local left, right = createTab("Macro")
+	----------------------------------------------------------------------
+	--- CATEGORIA: Macro ---
+	--- (a lógica de verdade desta categoria mora lá em cima, na seção "LÓGICA" --
+	---  isto aqui embaixo é só a INTERFACE: os botões/sliders que ligam nela) ---
+	--- ADICIONAR OPÇÃO NOVA A "Macro" -> cole o UI.xxx(...) logo acima do
+	---  marcador "criar nova opção abaixo" no fim deste bloco ---
+	----------------------------------------------------------------------
+	local current = 1
+	local function cm()
+		return macros[current]
+	end
+
+	local wEnabled, wKey, wMode, wLoops, wCycle, wSpeed, wJitter, stepList
+
+	local function refreshList(sel)
+		local texts = {}
+		for i, st in ipairs(cm().steps) do
+			texts[i] = describeStep(i, st)
+		end
+		stepList.Set(texts, sel)
+	end
+
+	local function loadMacro()
+		local m = cm()
+		wEnabled.Set(m.enabled, true)
+		wKey.Set(m.key)
+		wMode.Set(m.mode)
+		wLoops.Set(m.loops, true)
+		wCycle.Set(m.cycleDelay)
+		wSpeed.Set(m.speed, true)
+		wJitter.Set(m.jitter)
+		refreshList(nil)
+	end
+
+	-- ESQUERDA: configuração do macro ------------------------------------
+	UI.section(left, "Macro")
+	local names = {}
+	for i = 1, MACRO_COUNT do
+		names[i] = "Macro " .. i
+	end
+	UI.dropdown(left, "Macro", names, names[1], function(v)
+		current = tonumber(string.match(v, "%d+")) or 1
+		loadMacro()
+	end)
+	wEnabled = UI.toggle(left, "Macro ativado", false, function(v)
+		cm().enabled = v
+		if not v then
+			stopMacro(cm())
+		end
+	end, nil, "Macro")
+	wKey = UI.keybind(left, "Tecla de ativação", macros[1].key, function(k)
+		cm().key = k
+	end)
+	wMode = UI.dropdown(left, "Modo", { "Segurar", "Alternar", "Uma vez" }, "Segurar", function(v)
+		cm().mode = v
+	end)
+	wLoops = UI.slider(left, "Repetições (0 = infinito)", 0, 100, 0, 1, function(v)
+		cm().loops = v
+	end)
+	wCycle = UI.input(left, "Pausa ciclo (ms)", 0, function(text)
+		local v = num(text, 0, 600000, cm().cycleDelay)
+		cm().cycleDelay = v
+		wCycle.Set(v)
+	end)
+	wSpeed = UI.slider(left, "Velocidade (%)", 25, 400, 100, 5, function(v)
+		cm().speed = v
+	end)
+	wJitter = UI.input(left, "Variação (ms)", 0, function(text)
+		local v = num(text, 0, 5000, cm().jitter)
+		cm().jitter = v
+		wJitter.Set(v)
+	end)
+
+	UI.section(left, "Gravação")
+	UI.toggle(left, "Gravar macro", false, function(v)
+		if v then
+			recorder.on = true
+			recorder.events = {}
+			recorder.downs = {}
+			recorder.target = current
+			notify("Gravando: aperte as teclas e desligue o botão")
+		else
+			recorder.on = false
+			local added = buildStepsFromEvents(recorder.events)
+			local m = macros[recorder.target]
+			for _, st in ipairs(added) do
+				table.insert(m.steps, st)
+			end
+			if recorder.target == current then
+				refreshList(nil)
+			end
+			notify(#added .. " passos gravados no Macro " .. recorder.target)
+		end
+	end, nil, "Macro")
+
+	-- DIREITA: passos -----------------------------------------------------
+	UI.section(right, "Passos")
+	stepList = UI.listBox(right, 150)
+	UI.button(right, "Remover selecionado", function()
+		local i = stepList.Get()
+		if i then
+			table.remove(cm().steps, i)
+			refreshList(nil)
+		end
+	end)
+	UI.button(right, "Subir passo", function()
+		local i, steps = stepList.Get(), cm().steps
+		if i and i > 1 then
+			steps[i], steps[i - 1] = steps[i - 1], steps[i]
+			refreshList(i - 1)
+		end
+	end)
+	UI.button(right, "Descer passo", function()
+		local i, steps = stepList.Get(), cm().steps
+		if i and i < #steps then
+			steps[i], steps[i + 1] = steps[i + 1], steps[i]
+			refreshList(i + 1)
+		end
+	end)
+	UI.button(right, "Limpar todos os passos", function()
+		table.clear(cm().steps)
+		refreshList(nil)
+	end)
+
+	UI.section(right, "Adicionar passo")
+	local actionNames = {}
+	for _, a in ipairs(ACTIONS) do
+		table.insert(actionNames, a.name)
+	end
+	local aType = UI.dropdown(right, "Ação", actionNames, "Tecla")
+	local aKey = UI.keybind(right, "Tecla", Enum.KeyCode.R)
+	local aHold = UI.input(right, "Segurar (ms)", 30)
+	local aDelay = UI.input(right, "Esperar após (ms)", 50)
+	local aCount = UI.input(right, "Repetições (Spam)", 10)
+	UI.button(right, "Adicionar passo", function()
+		local def
+		for _, a in ipairs(ACTIONS) do
+			if a.name == aType.Get() then
+				def = a
+			end
+		end
+		if not def then
+			return
+		end
+		table.insert(cm().steps, {
+			type = def.type,
+			btn = def.btn,
+			key = aKey.Get(),
+			hold = num(aHold.Get(), 0, 600000, 30),
+			delay = num(aDelay.Get(), 0, 600000, 50),
+			count = math.floor(num(aCount.Get(), 1, 500, 10)),
+		})
+		refreshList(#cm().steps)
+	end)
+	UI.button(right, "Testar macro agora", function()
+		local m = cm()
+		if m.running then
+			stopMacro(m)
+		else
+			startMacro(m, math.max(1, m.loops))
+		end
+	end)
+	--- CRIAR NOVA OPÇÃO NA ABA "Macro" ABAIXO DESTA LINHA ---
+end
+
+-- ESP -----------------------------------------------------------------
+do
+	local left, right = createTab("ESP")
+	----------------------------------------------------------------------
+	--- CATEGORIA: ESP ---
+	--- (a lógica de verdade desta categoria mora lá em cima, na seção "LÓGICA" --
+	---  isto aqui embaixo é só a INTERFACE: os botões/sliders que ligam nela) ---
+	--- ADICIONAR OPÇÃO NOVA A "ESP" -> cole o UI.xxx(...) logo acima do
+	---  marcador "criar nova opção abaixo" no fim deste bloco ---
+	----------------------------------------------------------------------
+
+	UI.section(left, "Jogadores")
+	UI.toggle(left, "ESP ativado", false, function(v)
+		esp.on = v
+	end, nil, "ESP")
+	UI.toggle(left, "Mostrar nomes", false, function(v)
+		esp.names = v
+	end)
+	UI.toggle(left, "Mostrar distância", false, function(v)
+		esp.dist = v
+	end)
+	UI.toggle(left, "Mostrar vida", false, function(v)
+		esp.health = v
+	end)
+	UI.toggle(left, "Box ESP (caixa no corpo)", esp.box, function(v)
+		esp.box = v
+	end)
+
+	UI.section(left, "Linhas (Tracers)")
+	UI.toggle(left, "Linhas até os jogadores", esp.tracers, function(v)
+		esp.tracers = v
+	end)
+	UI.toggle(left, "Linhas para TODOS (sem limite)", esp.tracerGlobal, function(v)
+		esp.tracerGlobal = v
+	end)
+	UI.dropdown(left, "Origem da linha", { "Baixo", "Centro", "Mouse" }, esp.tracerOrigin, function(v)
+		esp.tracerOrigin = v
+	end)
+	UI.slider(left, "Espessura da linha", 1, 5, esp.tracerThick, 0.5, function(v)
+		esp.tracerThick = v
+	end)
+
+	UI.section(right, "Visual")
+	UI.slider(right, "Distância máxima (studs)", 100, 20000, esp.maxDist, 100, function(v)
+		esp.maxDist = v
+	end)
+	UI.dropdown(right, "Estilo", { "Contorno", "Preenchido", "Nenhum" }, esp.style, function(v)
+		esp.style = v
+	end)
+	UI.toggle(right, "Ignorar meu time", true, function(v)
+		esp.ignoreTeam = v
+	end)
+
+	UI.section(right, "Texto")
+	UI.dropdown(right, "Nome", { "Apelido", "Usuário" }, esp.nameMode, function(v)
+		esp.nameMode = v
+	end)
+	UI.dropdown(right, "Unidade", { "Metros", "Studs" }, esp.unit, function(v)
+		esp.unit = v
+	end)
+	UI.slider(right, "Tamanho do texto", 10, 22, esp.textSize, 1, function(v)
+		esp.textSize = v
+	end)
+	--- CRIAR NOVA OPÇÃO NA ABA "ESP" ABAIXO DESTA LINHA ---
+end
+
+-- SETTINGS ------------------------------------------------------------
+do
+	local left, right = createTab("Settings")
+	----------------------------------------------------------------------
+	--- CATEGORIA: Settings ---
+	--- (a lógica de verdade desta categoria mora lá em cima, na seção "LÓGICA" --
+	---  isto aqui embaixo é só a INTERFACE: os botões/sliders que ligam nela) ---
+	--- ADICIONAR OPÇÃO NOVA A "Settings" -> cole o UI.xxx(...) logo acima do
+	---  marcador "criar nova opção abaixo" no fim deste bloco ---
+	----------------------------------------------------------------------
+
+	UI.section(left, "Aparência")
+	UI.colors(left, "Cor do tema", {
+		Color3.fromRGB(56, 132, 255),
+		Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(0, 200, 255),
+		Color3.fromRGB(70, 200, 120),
+		Color3.fromRGB(255, 150, 60),
+		Color3.fromRGB(240, 70, 80),
+	})
+	local transparency = UI.slider(left, "Transparência da janela", 0, 60, 0, 1, function(v)
+		window.BackgroundTransparency = v / 100
+	end)
+	local scale = UI.slider(left, "Tamanho da interface", 70, 130, 100, 5, function(v)
+		userScale = v / 100
+		if panelOpen and not closing then
+			uiScale.Scale = userScale
+		end
+	end)
+
+	UI.section(left, "Perfil (Auto-Save)")
+	UI.button(left, "Save Config", saveConfig)
+	UI.button(left, "Load Config", function()
+		loadConfig(true)
+	end)
+	buildingTab = nil -- o próprio Auto-Load não entra no registro
+	autoToggle = UI.toggle(left, "Auto-Load Settings", false, function(v)
+		autoLoadOn = v
+		local data = readSave() or {}
+		data.autoLoad = v
+		writeSave(data)
+	end)
+	buildingTab = "Settings"
+
+	UI.section(right, "Geral")
+	UI.keybind(right, "Abrir/Fechar painel", toggleKey, function(k)
+		toggleKey = k
+	end)
+	UI.toggle(right, "Notificações", true, function(v)
+		notificationsEnabled = v
+	end)
+	UI.toggle(right, "HUD mobile", hudOn, function(v)
+		hudOn = v
+		applyHudVisibility()
+	end)
+	UI.toggle(right, "Mostrar FPS", false, function(v)
+		fpsOn = v
+		fpsWin.Visible = v and not clipMode
+	end)
+	UI.button(right, "Resetar aparência", function()
+		setAccent(DEFAULT_ACCENT)
+		transparency.Set(0)
+		scale.Set(100)
+		notify("Aparência resetada")
+	end)
+
+	UI.section(right, "Performance")
+	UI.button(right, "FPS Boost / Potato Mode", function()
+		local Lighting = game:GetService("Lighting")
+		local terrain = workspace:FindFirstChildOfClass("Terrain")
+
+		-- Céu, atmosfera e efeitos de pós-processamento
+		for _, inst in ipairs(Lighting:GetChildren()) do
+			if inst:IsA("Sky") or inst:IsA("Atmosphere") or inst:IsA("PostEffect") then
+				inst:Destroy()
+			end
+		end
+		Lighting.FogEnd = 1e9
+		Lighting.GlobalShadows = false
+		Lighting.Brightness = 1
+
+		-- Decoração do terreno (grama/plantas) e texturas visuais
+		if terrain then
+			-- Desligar a decoração do terrain (grama etc.) exige uma propriedade
+			-- que o Lua padrão não expõe. Isso só funciona rodando via executor;
+			-- em Studio/jogo publicado o pcall simplesmente falha e é ignorado.
+			local ok = pcall(function()
+				sethiddenproperty(terrain, "Decoration", false)
+			end)
+			if not ok then
+				terrain.Decoration = false -- fallback: essa propriedade É pública, então isso já ajuda bastante sozinho
+			end
+		end
+
+		-- Qualidade de renderização (textura/draw distance)
+		pcall(function()
+			settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+		end)
+
+		-- Remove partículas/efeitos visuais pesados do mapa (não mexe em nada seu/outros jogadores)
+		for _, inst in ipairs(workspace:GetDescendants()) do
+			if inst:IsA("ParticleEmitter") or inst:IsA("Trail") or inst:IsA("Smoke") or inst:IsA("Fire") or inst:IsA("Sparkles") then
+				inst.Enabled = false
+			end
+		end
+
+		notify("FPS Boost aplicado")
+	end)
+
+	UI.section(right, "Gravação")
+	clipToggle = UI.toggle(right, "Clip Mode", false, function(v)
+		applyClipMode(v)
+	end)
+	new("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 30),
+		BackgroundTransparency = 1,
+		Text = "Esconde o painel, a bolinha, o FOV, o HUD e a tabela FPS -- só a marca d'água\nfica visível. Aperte F8 (ou esse toggle de novo) pra voltar tudo.",
+		TextColor3 = THEME.muted,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		LayoutOrder = nextOrder(),
+	}, right)
+
+	UI.section(right, "Animações")
+	local wAnim = UI.toggle(right, "Animar abrir/fechar", anim.enabled, function(v)
+		anim.enabled = v
+	end)
+	local wStyle = UI.dropdown(right, "Estilo", { "Back", "Quart", "Quad", "Sine", "Exponential" }, anim.style, function(v)
+		anim.style = v
+	end)
+	local wTime = UI.slider(right, "Duração (s)", 0.05, 0.5, anim.openTime, 0.01, function(v)
+		anim.openTime = v
+	end)
+	local wScale = UI.slider(right, "Escala inicial (%)", 50, 95, anim.openScale * 100, 1, function(v)
+		anim.openScale = v / 100
+	end)
+	local wTabFade = UI.toggle(right, "Fade entre abas", anim.tabFade, function(v)
+		anim.tabFade = v
+	end)
+	local wTabTime = UI.slider(right, "Duração do fade (s)", 0.05, 0.4, anim.tabFadeTime, 0.01, function(v)
+		anim.tabFadeTime = v
+	end)
+	local wHover = UI.toggle(right, "Efeito hover", anim.hover, function(v)
+		anim.hover = v
+	end)
+	local wHoverStr = UI.slider(right, "Intensidade do hover", 2, 30, anim.hoverStrength, 1, function(v)
+		anim.hoverStrength = v
+	end)
+	UI.button(right, "Testar animação", function()
+		if not panelOpen then
+			return
+		end
+		hidePanel()
+		task.wait(anim.openTime + 0.4)
+		showPanel()
+	end)
+	UI.button(right, "Resetar animações", function()
+		for k, v in pairs(ANIM_DEFAULTS) do
+			anim[k] = v
+		end
+		wAnim.Set(anim.enabled)
+		wStyle.Set(anim.style)
+		wTime.Set(anim.openTime)
+		wScale.Set(anim.openScale * 100)
+		wTabFade.Set(anim.tabFade)
+		wTabTime.Set(anim.tabFadeTime)
+		wHover.Set(anim.hover)
+		wHoverStr.Set(anim.hoverStrength)
+		notify("Animações resetadas")
+	end)
+	--- CRIAR NOVA OPÇÃO NA ABA "Settings" ABAIXO DESTA LINHA ---
+end
+
+----------------------------------------------------------------------
+-- INÍCIO
+----------------------------------------------------------------------
+-- BOLINHA (aparece quando o painel está escondido) --------------------
+local BUBBLE_SIZE = 60
+
+local bubble = new("TextButton", {
+	Name = "Bolinha",
+	Size = UDim2.fromOffset(BUBBLE_SIZE, BUBBLE_SIZE),
+	Position = UDim2.new(1, -90, 0.5, -BUBBLE_SIZE / 2),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	Text = "",
+	AutoButtonColor = false,
+	Visible = false,
+	ZIndex = 150,
+}, gui)
+corner(bubble, BUBBLE_SIZE / 2)
+stroke(bubble, Color3.new(1, 1, 1), 2)
+local bubbleScale = new("UIScale", { Scale = 1 }, bubble)
+
+if LOGO_IMAGE ~= "" then
+	-- A imagem ocupa a bolinha inteira e é cortada em círculo.
+	-- Se as pontas da logo ficarem cortadas, diminua o Size (ex.: 0.9) e centralize.
+	local logo = new("ImageLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Image = LOGO_IMAGE,
+		ScaleType = Enum.ScaleType.Crop,
+		ZIndex = 151,
+	}, bubble)
+	corner(logo, BUBBLE_SIZE / 2)
+else
+	new("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "SW",
+		TextColor3 = Color3.new(1, 1, 1),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 22,
+		ZIndex = 151,
+	}, bubble)
+end
+
+-- ABRIR / FECHAR COM ANIMAÇÃO -----------------------------------------
+-- (declaradas no topo como locals; aqui só atribuímos)
+function showPanel()
+	closeDropdown()
+	bubble.Visible = false
+	panelOpen = true
+	window.Visible = true
+
+	if not anim.enabled then
+		closing = false
+		window.GroupTransparency = 0
+		uiScale.Scale = userScale
+		return
+	end
+
+	-- Se estava no meio do fechamento, continua de onde está (sem "pulo")
+	if not closing then
+		window.GroupTransparency = 1
+		uiScale.Scale = userScale * anim.openScale
+	end
+	closing = false
+	tweenEx(window, anim.openTime, { GroupTransparency = 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	tweenEx(uiScale, anim.openTime, { Scale = userScale }, EASING[anim.style] or Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+end
+
+function hidePanel()
+	closeDropdown()
+	panelOpen = false
+	hideToken += 1
+	local myToken = hideToken
+
+	local function finish()
+		closing = false
+		window.Visible = false
+		window.GroupTransparency = 0
+		uiScale.Scale = userScale
+		bubbleScale.Scale = 0
+		bubble.Visible = true
+		tween(bubbleScale, 0.2, { Scale = 1 })
+	end
+
+	if not anim.enabled then
+		finish()
+		return
+	end
+
+	closing = true
+	tweenEx(window, anim.openTime, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	local tw = tweenEx(uiScale, anim.openTime, { Scale = userScale * anim.openScale }, EASING[anim.style] or Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	tw.Completed:Connect(function(state)
+		-- só finaliza se esse fechamento terminou de verdade e ninguém reabriu no meio
+		if state == Enum.PlaybackState.Completed and myToken == hideToken and closing and not panelOpen then
+			finish()
+		end
+	end)
+end
+
+-- Arrastar a bolinha; um clique simples (sem arrastar) reabre o painel
+do
+	local dragging, moved = false, false
+	local dragStart, startAbs
+
+	bubble.InputBegan:Connect(function(input)
+		if isPointer(input) then
+			dragging, moved = true, false
+			dragStart = input.Position
+			startAbs = bubble.AbsolutePosition
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - dragStart
+			if d.Magnitude > 6 then
+				moved = true
+			end
+			if moved then
+				local screen = gui.AbsoluteSize
+				local x = math.clamp(startAbs.X + d.X, 0, screen.X - BUBBLE_SIZE)
+				local y = math.clamp(startAbs.Y + d.Y, 0, screen.Y - BUBBLE_SIZE)
+				bubble.Position = UDim2.fromOffset(x, y)
+			end
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if dragging and isPointer(input) then
+			dragging = false
+			if not moved then
+				showPanel()
+			end
+		end
+	end)
+end
+
+----------------------------------------------------------------------
+-- HUD DE ATALHOS (tiles escuros, estilo do print de referência)
+----------------------------------------------------------------------
+-- Duas partes separadas por uma linha fina:
+--   "AÇÃO"   -- Pulo / Impulso / Soru / TP: disparam na hora, não têm estado.
+--   "ESTADO" -- Fly / Macro: mostram ON/OFF na legenda e acendem na cor
+--              do tema quando ligados.
+-- Cada tile se arrasta (toque/clique sem mover = ação). Posição não é salva.
+-- O toggle "HUD mobile" (Settings) mostra/esconde tudo isso de uma vez.
+do
+	local TILE_W, TILE_H = 58, 46
+	local TILE_X = -12 - TILE_W
+	local GAP = TILE_H + 8
+	local TILE_BG = Color3.fromRGB(10, 10, 12)
+
+	-- tile base: fundo escuro arredondado, nome em destaque e legenda embaixo
+	local function makeTile(name, label, sub, startY)
+		local b = new("TextButton", {
+			Name = name,
+			Size = UDim2.fromOffset(TILE_W, TILE_H),
+			Position = UDim2.new(1, TILE_X, 0, startY),
+			BackgroundColor3 = TILE_BG,
+			BackgroundTransparency = 0.1,
+			AutoButtonColor = false,
+			Text = "",
+			ZIndex = 151,
+		}, gui)
+		corner(b, 10)
+		local ring = stroke(b, Color3.new(1, 1, 1), 1)
+		ring.Transparency = 0.7
+
+		new("TextLabel", {
+			Size = UDim2.new(1, -6, 0, 20),
+			Position = UDim2.fromOffset(3, 7),
+			BackgroundTransparency = 1,
+			Text = label,
+			TextColor3 = Color3.new(1, 1, 1),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 12,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			ZIndex = 152,
+		}, b)
+		local bottom = new("TextLabel", {
+			Size = UDim2.new(1, -6, 0, 12),
+			Position = UDim2.new(0, 3, 1, -16),
+			BackgroundTransparency = 1,
+			Text = sub,
+			TextColor3 = THEME.muted,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 9,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			ZIndex = 152,
+		}, b)
+		table.insert(hudItems, b) -- HUD mobile / Clip Mode escondem esse tile junto
+		return b, ring, bottom
+	end
+
+	-- arrastar + clique; onDown no toque inicial, onRelease(moved) no fim
+	local function wireDrag(b, onDown, onRelease)
+		local dragging, moved = false, false
+		local dragStart, startAbs
+		b.InputBegan:Connect(function(input)
+			if not isPointer(input) then
+				return
+			end
+			dragging, moved = true, false
+			dragStart = input.Position
+			startAbs = b.AbsolutePosition
+			if onDown then
+				onDown()
+			end
+		end)
+		UserInputService.InputChanged:Connect(function(input)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+				or input.UserInputType == Enum.UserInputType.Touch) then
+				local d = input.Position - dragStart
+				if d.Magnitude > 6 then
+					moved = true
+				end
+				if moved then
+					local screen = gui.AbsoluteSize
+					local x = math.clamp(startAbs.X + d.X, 0, screen.X - TILE_W)
+					local y = math.clamp(startAbs.Y + d.Y, 0, screen.Y - TILE_H)
+					b.Position = UDim2.fromOffset(x, y)
+				end
+			end
+		end)
+		UserInputService.InputEnded:Connect(function(input)
+			if dragging and isPointer(input) then
+				dragging = false
+				if onRelease then
+					onRelease(moved)
+				end
+			end
+		end)
+	end
+
+	-- tile de AÇÃO: dispara no toque/clique simples
+	local function actionTile(name, label, startY, callback)
+		local b = makeTile(name, label, "ação", startY)
+		addHover(b, "BackgroundColor3", TILE_BG)
+		wireDrag(b, nil, function(moved)
+			if not moved then
+				callback()
+			end
+		end)
+		return b
+	end
+
+	-- tile de ESTADO: ON/OFF na legenda, acende quando ativo
+	local function stateTile(name, label, startY, isActiveFn, onRelease)
+		local b, ring, bottom = makeTile(name, label, "OFF", startY)
+		RunService.Heartbeat:Connect(function()
+			local on = isActiveFn()
+			b.BackgroundColor3 = on and ACCENT or TILE_BG
+			b.BackgroundTransparency = on and 0.05 or 0.1
+			ring.Color = on and ACCENT or Color3.new(1, 1, 1)
+			ring.Transparency = on and 0 or 0.7
+			bottom.Text = on and "ON" or "OFF"
+			bottom.TextColor3 = on and Color3.new(1, 1, 1) or THEME.muted
+		end)
+		wireDrag(b, nil, onRelease)
+		return b
+	end
+
+	----------------------------------------------------------------
+	-- PARTE "AÇÃO"
+	----------------------------------------------------------------
+	actionTile("SukyHud_Pulo", "PULO", 110, jumpBoost)
+	actionTile("SukyHud_Impulso", "IMPULSO", 110 + GAP, triggerGlideA)
+	actionTile("SukyHud_Soru", "SORU", 110 + GAP * 2, function()
+		doSoru()
+	end)
+	actionTile("SukyHud_TP", "TP", 110 + GAP * 3, doTpToPlayer)
+
+	-- divisória fina entre as duas partes
+	local hudDivider = new("Frame", {
+		Name = "SukyHud_Divider",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, TILE_X, 0, 110 + GAP * 4 - 4),
+		Size = UDim2.fromOffset(TILE_W, 1),
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundTransparency = 0.6,
+		BorderSizePixel = 0,
+		ZIndex = 150,
+	}, gui)
+	table.insert(hudItems, hudDivider)
+
+	----------------------------------------------------------------
+	-- PARTE "ESTADO"
+	----------------------------------------------------------------
+	stateTile("SukyHud_Fly", "FLY", 110 + GAP * 4 + 8, function()
+		return flyState.enabled
+	end, function(moved)
+		if not moved and flyToggle then
+			flyToggle.Set(not flyToggle.Get())
+		end
+	end)
+
+	-- Macro 1: mesma lógica da tecla de ativação (Segurar / Alternar / Uma vez)
+	local macroTile
+	macroTile = stateTile("SukyHud_Macro", "MACRO", 110 + GAP * 5 + 8, function()
+		local m = macros[1]
+		return m ~= nil and m.running
+	end, function(moved)
+		-- ao soltar: só o modo "Segurar" para (igual ao keyup da tecla real)
+		local m = macros[1]
+		if m and m.mode == "Segurar" then
+			stopMacro(m)
+		end
+	end)
+	-- ao tocar: dispara igual ao keydown da tecla real
+	macroTile.InputBegan:Connect(function(input)
+		if not isPointer(input) then
+			return
+		end
+		local m = macros[1]
+		if m and m.enabled then
+			if m.mode == "Alternar" then
+				if m.running then
+					stopMacro(m)
+					notify("Macro desligado")
+				else
+					startMacro(m, m.loops)
+					notify("Macro ligado")
+				end
+			else
+				startMacro(m, m.mode == "Uma vez" and math.max(1, m.loops) or m.loops)
+			end
+		end
+	end)
+end
+
+-- Mostra o HUD só se o toggle estiver ligado e o Clip Mode estiver desligado
+function applyHudVisibility()
+	local show = hudOn and not clipMode
+	for _, inst in ipairs(hudItems) do
+		inst.Visible = show
+	end
+end
+
+----------------------------------------------------------------------
+-- CLIP MODE (de verdade, agora que bolinha/FOV/HUD já existem)
+----------------------------------------------------------------------
+-- Esconde: painel, bolinha "SW", círculo de FOV, os tiles do HUD + divisória,
+-- a tabela FPS e os toasts de notificação. NÃO esconde a marca d'água
+-- "SUKYWARE" -- ela fica de propósito, é a marca d'água do clipe.
+function applyClipMode(on)
+	clipMode = on
+	if on then
+		window.Visible = false
+		bubble.Visible = false
+		fovCircle.Visible = false
+		toastHolder.Visible = false
+		fpsWin.Visible = false
+	else
+		bubble.Visible = not panelOpen
+		window.Visible = panelOpen
+		fovCircle.Visible = cfg.showFov
+		toastHolder.Visible = true
+		fpsWin.Visible = fpsOn
+		notify("Clip Mode desativado")
+	end
+	applyHudVisibility()
+	if clipToggle then
+		clipToggle.Set(on, true) -- silencioso: não dispara de novo o callback
+	end
+end
+
+closeButton.MouseButton1Click:Connect(hidePanel)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+	if input.KeyCode == toggleKey then
+		if panelOpen then
+			hidePanel()
+		else
+			showPanel()
+		end
+	elseif input.KeyCode == Enum.KeyCode.F8 then
+		applyClipMode(not clipMode)
+	end
+end)
+
+task.wait() -- espera o layout calcular as posições das abas
+selectTab("PVP", true) -- true = sem fade na primeira abertura
+
+runLoadingScreen() -- card "Carregando script luau" por 5s, depois some sozinho
+
+showPanel() -- abre com a animação, logo que o card sai
+
+-- AUTO-LOAD: se existir um save com "Auto-Load Settings" ligado, restaura tudo
+local saved = readSave()
+if saved and saved.autoLoad then
+	autoLoadOn = true
+	autoToggle.Set(true, true)
+	loadConfig(false)
+end
+
+notify("Painel carregado")
